@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Form, Input, Button, Card, message, Layout, Typography, Table, Popconfirm, Modal, Select, DatePicker, Upload, Menu } from 'antd';
-import { createStaff, logoutUser, createStudent, getOrganizationStaff, getOrganizationStudents, deleteUserDoc, updateUserDoc, createCourse, getOrganizationCourses, createCourseAssignment, getCourseAssignments, uploadCourseContentFile, deleteCourseAssignment, updateOrganizationLogo, getOrganizationDetails, getAttendanceHistoryByOrg } from '../../firebase/services';
-import { Users, GraduationCap, LogOut, ShieldCheck, BookOpen, Calendar, UploadCloud, Settings, Search, Image as ImageIcon, Pencil, Trash2, FileSpreadsheet, ClipboardList, Download, CheckCircle, XCircle } from 'lucide-react';
+import { Form, Input, Button, Card, message, Layout, Typography, Table, Popconfirm, Modal, Select, DatePicker, TimePicker, Upload, Menu, Dropdown, Tabs, Collapse } from 'antd';
+import { InboxOutlined } from '@ant-design/icons';
+import { createStaff, logoutUser, createStudent, getOrganizationStaff, getOrganizationStudents, subscribeToOrganizationStudents, fetchAdmissionsHierarchy, getISOWeekNumber, migrateAllStudentsToHierarchy, deleteUserDoc, updateUserDoc, createCourse, getOrganizationCourses, createCourseAssignment, getCourseAssignments, uploadCourseContentFile, deleteCourseAssignment, updateOrganizationLogo, getOrganizationDetails, getAttendanceHistoryByOrg, subscribeToAttendanceHistoryByOrg, updateCourse, createReceipt, updateStudentStatus, deleteCourse, deleteCourseModule, listenToOrganizationStatus, logTransaction, addStudentMarks, getStudentMarks } from '../../firebase/services';
+import { Users, GraduationCap, LogOut, ShieldCheck, BookOpen, Calendar, UploadCloud, Settings, Briefcase, Search, Image as ImageIcon, Pencil, Trash2, FileSpreadsheet, ClipboardList, Download, CheckCircle, XCircle, Banknote, Clock, X, UserPlus, FileText, Award, Eye } from 'lucide-react';
 import { Checkbox } from 'antd';
+import './AdminDashboard.css';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
 
 const AdminDashboard = () => {
+  const userStr = localStorage.getItem('lms_user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  const isBillUploadEnabled = true;
   const [loading, setLoading] = useState(false);
   const [staffForm] = Form.useForm();
   const [studentForm] = Form.useForm();
@@ -25,18 +30,323 @@ const AdminDashboard = () => {
   const [selectedCourseForEnrollment, setSelectedCourseForEnrollment] = useState(null);
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [facultySearchQuery, setFacultySearchQuery] = useState('');
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const selectedStudentIds = Form.useWatch('studentIds', assignmentForm) || [];
   
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
+  const [isAddStudentModalVisible, setIsAddStudentModalVisible] = useState(false);
+  const [isAddFacultyModalVisible, setIsAddFacultyModalVisible] = useState(false);
+  const [isViewFacultyModalVisible, setIsViewFacultyModalVisible] = useState(false);
+  const [selectedViewFaculty, setSelectedViewFaculty] = useState(null);
   
-  const [logoUrl, setLogoUrl] = useState(null);
+  const [logoUrl, setLogoUrl] = useState(localStorage.getItem('org_logo') || null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
   
-  const userStr = localStorage.getItem('lms_user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  const [isFeeModalVisible, setIsFeeModalVisible] = useState(false);
+  const [selectedStudentForFee, setSelectedStudentForFee] = useState(null);
+  const [feeForm] = Form.useForm();
+  
+  const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
+  const [selectedStudentForProfile, setSelectedStudentForProfile] = useState(null);
+  
+  const [isStatusModalVisible, setIsStatusModalVisible] = useState(false);
+  const [selectedStudentForStatus, setSelectedStudentForStatus] = useState(null);
+  const [statusUpdateForm] = Form.useForm();
+  
+  const [isTimelineModalVisible, setIsTimelineModalVisible] = useState(false);
+  const [selectedStudentForTimeline, setSelectedStudentForTimeline] = useState(null);
+  const [studentManagementTab, setStudentManagementTab] = useState('active');
+  
+  // Student Journey Hub & Search Modal State
+  const [journeySearchQuery, setJourneySearchQuery] = useState('');
+  const [selectedJourneyStudent, setSelectedJourneyStudent] = useState(null);
+  const [globalSearchModalVisible, setGlobalSearchModalVisible] = useState(false);
+  const [globalSearchAction, setGlobalSearchAction] = useState(null);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  
+  // Marks Management State
+  const [marksSearchText, setMarksSearchText] = useState('');
+  const [marksCourseFilter, setMarksCourseFilter] = useState('All');
+
+  
+  // Reports Module State
+  const [activeReportTab, setActiveReportTab] = useState('admission');
+  const [admissionReportCourseFilter, setAdmissionReportCourseFilter] = useState('All');
+  const [isAdmissionSummaryModalVisible, setIsAdmissionSummaryModalVisible] = useState(false);
+  const [drillDownPath, setDrillDownPath] = useState([]);
+  const [drillDownData, setDrillDownData] = useState([]);
+  const [isDrillDownLoading, setIsDrillDownLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmissionSummaryModalVisible || !user?.organizationId) return;
+    const fetchDrillDown = async () => {
+      setIsDrillDownLoading(true);
+      try {
+        const data = await fetchAdmissionsHierarchy(user.organizationId, drillDownPath);
+        setDrillDownData(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsDrillDownLoading(false);
+      }
+    };
+    fetchDrillDown();
+  }, [drillDownPath, isAdmissionSummaryModalVisible, user?.organizationId]);
+
+  
+  // Student Ledger Filters
+  const [studentTextSearch, setStudentTextSearch] = useState('');
+  const [studentCourseFilter, setStudentCourseFilter] = useState('All');
+  const [studentAgeFilter, setStudentAgeFilter] = useState('All');
+  const [studentAcademicYearFilter, setStudentAcademicYearFilter] = useState('All');
+
+  // Attendance Reports State
+  const [attendanceReportTab, setAttendanceReportTab] = useState('daily');
+  const [attendanceBatchFilter, setAttendanceBatchFilter] = useState('All');
+  const [attendanceFacultyFilter, setAttendanceFacultyFilter] = useState('All');
+  const [selectedAttendanceReport, setSelectedAttendanceReport] = useState(null);
+
+  const [offlineFeeForm] = Form.useForm();
+  const cashAmount = Form.useWatch('cashAmount', offlineFeeForm) || 0;
+  const upiAmount = Form.useWatch('upiAmount', offlineFeeForm) || 0;
+  const cardAmount = Form.useWatch('cardAmount', offlineFeeForm) || 0;
+  const totalFeePaid = Number(cashAmount) + Number(upiAmount) + Number(cardAmount);
+
+  // Billing Management State
+  const [billingTab, setBillingTab] = useState('ledger');
+  const [billingRows, setBillingRows] = useState([
+    { id: Date.now(), date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) }
+  ]);
+  const [billingStudentSearch, setBillingStudentSearch] = useState('');
+
+  // Journey Hub Overlay States
+  const [isJourneyAttendanceModalVisible, setIsJourneyAttendanceModalVisible] = useState(false);
+  const [selectedJourneyAttendanceDate, setSelectedJourneyAttendanceDate] = useState(null);
+  const [isJourneyFeeModalVisible, setIsJourneyFeeModalVisible] = useState(false);
+  const [isJourneyProfileModalVisible, setIsJourneyProfileModalVisible] = useState(false);
+
+  const handleBillingRowChange = (id, field, value) => {
+    setBillingRows(prevRows => prevRows.map(row => {
+      if (row.id === id) {
+        const updatedRow = { ...row, [field]: value };
+        if (field === 'enrollmentNo') {
+          const student = studentList.find(s => s.enrollmentNo === value);
+          if (student) {
+            updatedRow.studentId = student.id;
+            updatedRow.studentName = student.name;
+            updatedRow.course = student.course || 'N/A';
+            updatedRow.totalFees = student.courseFee || 28000;
+            const paid = updatedRow.splitMode ? (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0) + (Number(updatedRow.cardAmount) || 0) : (Number(updatedRow.amountPaid) || 0);
+            updatedRow.balance = updatedRow.totalFees - paid;
+            updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
+          } else {
+            updatedRow.studentId = null;
+            updatedRow.studentName = '';
+            updatedRow.course = '';
+            updatedRow.totalFees = 0;
+            const paid = updatedRow.splitMode ? (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0) + (Number(updatedRow.cardAmount) || 0) : (Number(updatedRow.amountPaid) || 0);
+            updatedRow.balance = 0 - paid;
+            updatedRow.status = 'Pending';
+          }
+        }
+        if (field === 'amountPaid' || field === 'cashAmount' || field === 'upiAmount' || field === 'cardAmount' || field === 'splitMode') {
+          const paid = updatedRow.splitMode ? (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0) + (Number(updatedRow.cardAmount) || 0) : (Number(updatedRow.amountPaid) || 0);
+          updatedRow.balance = updatedRow.totalFees - paid;
+          updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
+        }
+        return updatedRow;
+      }
+      return row;
+    }));
+  };
+
+  const handleSaveBillingRow = async (row) => {
+    if (!row.studentId) {
+      message.error("Please enter a valid Enrollment No.");
+      return;
+    }
+      const amount = row.splitMode ? (Number(row.cashAmount) || 0) + (Number(row.upiAmount) || 0) + (Number(row.cardAmount) || 0) : (Number(row.amountPaid) || 0);
+      if (amount <= 0) {
+        message.error("Amount Paid must be greater than 0");
+        return;
+      }
+      setLoading(true);
+      try {
+        await logTransaction('BILLING_MANAGEMENT', {
+          studentId: row.studentId,
+          adminId: user?.id,
+          amount: amount,
+          actionContext: 'Spreadsheet Billing Payment'
+        });
+        const receiptData = {
+          studentId: row.studentId,
+          course: row.course || 'N/A',
+          paymentSplit: row.splitMode ? {
+            cash: Number(row.cashAmount) || 0,
+            upi: Number(row.upiAmount) || 0,
+            card: Number(row.cardAmount) || 0
+          } : { 
+            cash: row.mode === 'Cash' ? amount : 0, 
+            upi: row.mode === 'GPay' ? amount : 0, 
+            card: row.mode === 'Card' ? amount : 0 
+          },
+          totalAmount: amount, // Represents cumulative sum as per plan
+          billNumber: row.billCode || `BILL-${Date.now()}`,
+          paymentDate: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+          paymentTime: new Date().toISOString(),
+          dueDate: row.dueDate ? new Date(row.dueDate).toISOString() : null,
+          payer: row.payer || 'Student',
+          cashier: row.cashier || user?.name || 'Admin',
+          remarks: 'Spreadsheet Billing Grid'
+        };
+        await createReceipt(receiptData);
+        
+        const student = studentList.find(s => s.id === row.studentId);
+        const courseFee = student?.courseFee || 28000;
+        const newPaid = amount;
+        const newPending = courseFee - newPaid;
+        await updateUserDoc(row.studentId, {
+          paidFee: newPaid,
+          pendingFee: newPending
+        });
+        message.success("Payment recorded successfully!");
+        fetchStaffAndStudents();
+        // Add a fresh row
+        setBillingRows(prev => [...prev, { id: Date.now(), date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: row.billMonth || new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) }]);
+    } catch (error) {
+      message.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadTodaysCollectionCSV = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const allTransactions = [];
+      studentList.forEach(student => {
+        if (student.feeHistory) {
+          student.feeHistory.forEach(fee => {
+            const feeDate = fee.paymentDate ? new Date(fee.paymentDate).toISOString().split('T')[0] : '';
+            if (feeDate === today) {
+              allTransactions.push({
+                "Date": feeDate,
+                "Enrollment No": student.enrollmentNo || student.id,
+                "Student Name": student.name,
+                "Course": student.course || 'N/A',
+                "Amount Paid": fee.amountPaid || (fee.cashAmount || 0) + (fee.upiAmount || 0) + (fee.cardAmount || 0),
+                "Receipt No": fee.billNumber || 'Manual',
+                "Data Masking": "[Aadhaar Redacted]"
+              });
+            }
+          });
+        }
+      });
+      if (allTransactions.length === 0) {
+        message.info("No collections found for today.");
+        return;
+      }
+      const csv = Papa.unparse(allTransactions);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Todays_Collection_${today}.csv`);
+      link.click();
+    } catch (e) {
+      message.error("Failed to generate CSV: " + e.message);
+    }
+  };
+
+  const downloadStudentLedgerCSV = async () => {
+    if (!billingStudentSearch) {
+      message.warning("Please enter a student name or enrollment no to track ledger.");
+      return;
+    }
+    const student = studentList.find(s => s.name.toLowerCase() === billingStudentSearch.toLowerCase() || s.enrollmentNo === billingStudentSearch);
+    if (!student) {
+      message.error("Student not found.");
+      return;
+    }
+    if (!student.feeHistory || student.feeHistory.length === 0) {
+      message.info("No payment history found for this student.");
+      return;
+    }
+    const transactions = student.feeHistory.map(fee => ({
+      "Date": fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString() : 'N/A',
+      "Enrollment No": student.enrollmentNo || student.id,
+      "Student Name": student.name,
+      "Course": student.course || 'N/A',
+      "Course Fee": student.courseFee || 28000,
+      "Amount Paid": fee.amountPaid || (fee.cashAmount || 0) + (fee.upiAmount || 0) + (fee.cardAmount || 0),
+      "Receipt No": fee.billNumber || 'Manual',
+      "Data Masking": "[Aadhaar Redacted]"
+    }));
+    const csv = Papa.unparse(transactions);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Student_Ledger_${student.name.replace(/\s+/g, '_')}.csv`);
+    link.click();
+  };
+
+  const handleFeeSubmit = async (values) => {
+    if (totalFeePaid <= 0) {
+      message.error("Total amount must be greater than 0");
+      return;
+    }
+    setLoading(true);
+    try {
+      await logTransaction('OFFLINE_FEE_COLLECTION', {
+        studentId: selectedStudentForFee.id,
+        adminId: user?.id,
+        amount: totalFeePaid,
+        actionContext: 'Offline Fee Collection'
+      });
+
+      const receiptData = {
+        studentId: selectedStudentForFee.id,
+        course: selectedStudentForFee.course || 'N/A',
+        paymentSplit: {
+          cash: Number(values.cashAmount || 0),
+          upi: Number(values.upiAmount || 0),
+          card: Number(values.cardAmount || 0)
+        },
+        totalAmount: totalFeePaid,
+        billNumber: values.billNumber,
+        paymentDate: values.paymentDate ? values.paymentDate.toISOString() : new Date().toISOString(),
+        paymentTime: values.paymentTime ? values.paymentTime.format('HH:mm') : null,
+        remarks: values.remarks || ''
+      };
+      
+      await createReceipt(receiptData);
+      
+      const currentPaid = selectedStudentForFee.paidFee || 0;
+      const courseFee = selectedStudentForFee.courseFee || 28000;
+      const newPaid = currentPaid + totalFeePaid;
+      const newPending = courseFee - newPaid;
+      
+      await updateUserDoc(selectedStudentForFee.id, {
+        paidFee: newPaid,
+        pendingFee: newPending
+      });
+      
+      message.success("Fee collected successfully!");
+      setIsFeeModalVisible(false);
+      offlineFeeForm.resetFields();
+      fetchStaffAndStudents();
+    } catch (error) {
+      message.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
 
   const downloadAttendanceCSV = (item) => {
     const headers = ['Student Name', 'Status', 'Date', 'Batch', 'Time Slot'];
@@ -52,23 +362,33 @@ const AdminDashboard = () => {
     document.body.removeChild(link);
   };
 
+  const renderHighlightedText = (text, query) => {
+    if (!query || typeof text !== 'string') return text;
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return parts.map((part, index) => 
+      part.toLowerCase() === query.toLowerCase() ? <strong key={index} style={{ fontWeight: 700, color: '#000000' }}>{part}</strong> : part
+    );
+  };
+
   const fetchStaffAndStudents = async () => {
     if (!user?.organizationId) return;
     try {
-      const [staff, students, courses, assignments, orgDetails] = await Promise.all([
+      const [staff, courses, assignments, orgDetails] = await Promise.all([
         getOrganizationStaff(user.organizationId),
-        getOrganizationStudents(user.organizationId),
         getOrganizationCourses(user.organizationId),
         getCourseAssignments(user.organizationId),
-        getOrganizationDetails(user.organizationId),
-        getAttendanceHistoryByOrg(user.organizationAccessId)
+        getOrganizationDetails(user.organizationId)
       ]);
       setStaffList(staff);
-      setStudentList(students);
       setCourseList(courses);
       setAssignmentList(assignments);
-      setAttendanceHistoryList(history.sort((a, b) => b.timestamp?.seconds - a.timestamp?.seconds));
-      if (orgDetails.logoUrl) setLogoUrl(orgDetails.logoUrl);
+      if (orgDetails.logoUrl) {
+        setLogoUrl(orgDetails.logoUrl);
+        localStorage.setItem('org_logo', orgDetails.logoUrl);
+      } else {
+        setLogoUrl(null);
+        localStorage.removeItem('org_logo');
+      }
     } catch (error) {
       console.error(error);
     }
@@ -76,7 +396,27 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchStaffAndStudents();
+    const savedTheme = localStorage.getItem('app-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
   }, [user?.organizationId]);
+
+  useEffect(() => {
+    if (user?.organizationId) {
+      const unsubscribe = subscribeToOrganizationStudents(user.organizationId, (students) => {
+        setStudentList(students);
+      });
+      return () => unsubscribe();
+    }
+  }, [user?.organizationId]);
+
+  useEffect(() => {
+    if (user?.organizationAccessId) {
+      const unsubscribe = subscribeToAttendanceHistoryByOrg(user.organizationAccessId, (history) => {
+        setAttendanceHistoryList(history.sort((a, b) => b.timestamp?.seconds - a.timestamp?.seconds));
+      });
+      return () => unsubscribe();
+    }
+  }, [user?.organizationAccessId]);
 
   const handleDeleteUser = async (id) => {
     try {
@@ -91,9 +431,23 @@ const AdminDashboard = () => {
   const handleEditClick = (record) => {
     setEditingUser(record);
     editForm.setFieldsValue({
-      name: record.name,
-      email: record.email,
-      phoneNumber: record.phoneNumber
+      name: record.name || "",
+      email: record.email || "",
+      phoneNumber: record.phoneNumber || "",
+      enrollmentNo: record.enrollmentNo || "",
+      course: record.course || "",
+      gender: record.gender || "",
+      dob: record.dob || "",
+      dateOfJoining: record.dateOfJoining || "",
+      courseFee: record.courseFee || "",
+      parentPhone: record.parentPhone || "",
+      status: record.currentStatus || record.status || 'Active',
+      age: record.age !== undefined ? record.age : "",
+      batch: record.batch !== undefined ? record.batch : "",
+      degree: record.degree !== undefined ? record.degree : "",
+      address: record.address !== undefined ? record.address : "",
+      experience: record.experience !== undefined ? record.experience : "",
+      facultyId: record.facultyId !== undefined ? record.facultyId : ""
     });
     setIsEditModalVisible(true);
   };
@@ -103,9 +457,39 @@ const AdminDashboard = () => {
     try {
       if (values.phoneNumber && !values.phoneNumber.startsWith('+')) values.phoneNumber = `+91${values.phoneNumber}`;
       if (values.parentPhone && !values.parentPhone.startsWith('+')) values.parentPhone = `+91${values.parentPhone}`;
-      await updateUserDoc(editingUser.id, values);
+      
+      const updatePayload = {
+        ...values,
+        age: values.age ? parseInt(values.age, 10) : null,
+        batch: values.batch ? String(values.batch).trim() : "",
+        status: values.status || 'Active',
+        currentStatus: values.status || 'Active',
+        degree: values.degree !== undefined ? values.degree : (editingUser?.degree || ""),
+        address: values.address !== undefined ? values.address : (editingUser?.address || ""),
+        experience: values.experience !== undefined ? values.experience : (editingUser?.experience || ""),
+        facultyId: values.facultyId !== undefined ? values.facultyId : (editingUser?.facultyId || ""),
+      };
+
+      // Ensure no undefined values are sent to Firebase updateDoc
+      Object.keys(updatePayload).forEach(key => {
+        if (updatePayload[key] === undefined) {
+          delete updatePayload[key];
+        }
+      });
+
+      await updateUserDoc(editingUser.id, updatePayload);
       message.success("Profile updated successfully!");
       setIsEditModalVisible(false);
+      
+      // Force state synchronized refresh pipeline
+      if (selectedJourneyStudent && selectedJourneyStudent.id === editingUser.id) {
+        setSelectedJourneyStudent(prev => ({
+          ...prev,
+          ...updatePayload
+        }));
+      }
+      setStudentList(prev => prev.map(s => s.id === editingUser.id ? { ...s, ...updatePayload } : s));
+
       fetchStaffAndStudents();
     } catch (error) {
       message.error("Failed to update profile: " + error.message);
@@ -115,10 +499,12 @@ const AdminDashboard = () => {
   };
 
   const staffColumns = [
+    { title: 'Faculty ID', dataIndex: 'facultyId', key: 'facultyId', width: 120, render: text => text || 'N/A' },
     { title: 'Name', dataIndex: 'name', key: 'name', width: 150 },
     { title: 'Email', dataIndex: 'email', key: 'email', width: 250 },
     { title: 'Actions', key: 'actions', width: 150, align: 'center', render: (_, record) => (
       <div className="flex gap-4 items-center justify-center">
+        <Eye className="w-5 h-5 text-emerald-600 hover:text-emerald-800 cursor-pointer transition-colors" title="View" aria-label="View" onClick={() => { setSelectedViewFaculty(record); setIsViewFacultyModalVisible(true); }} />
         <Pencil className="w-5 h-5 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors" title="Edit" aria-label="Edit" onClick={() => handleEditClick(record)} />
         <Popconfirm title="Are you sure you want to remove this faculty member?" onConfirm={() => handleDeleteUser(record.id)} okText="Yes" cancelText="No">
           <Trash2 className="w-5 h-5 text-red-600 hover:text-red-800 cursor-pointer transition-colors" title="Delete" aria-label="Delete" />
@@ -127,23 +513,262 @@ const AdminDashboard = () => {
     )}
   ];
 
-  const studentColumns = [
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 150 },
-    { title: 'Email', dataIndex: 'email', key: 'email', width: 250 },
-    { title: 'Actions', key: 'actions', width: 150, align: 'center', render: (_, record) => (
-      <div className="flex gap-4 items-center justify-center">
-        <Pencil className="w-5 h-5 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors" title="Edit" aria-label="Edit" onClick={() => handleEditClick(record)} />
-        <Popconfirm title="Are you sure you want to remove this student?" onConfirm={() => handleDeleteUser(record.id)} okText="Yes" cancelText="No">
-          <Trash2 className="w-5 h-5 text-red-600 hover:text-red-800 cursor-pointer transition-colors" title="Delete" aria-label="Delete" />
-        </Popconfirm>
+  const handleStatusUpdateSubmit = async (values) => {
+    setLoading(true);
+    try {
+      await updateStudentStatus(
+        selectedStudentForStatus.id, 
+        selectedStudentForStatus.statusHistory, 
+        values.newStatus, 
+        values.reason
+      );
+      message.success("Student status updated successfully!");
+      setIsStatusModalVisible(false);
+      statusUpdateForm.resetFields();
+      fetchStaffAndStudents();
+    } catch (error) {
+      message.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getFeeStatus = (record) => {
+    const courseFee = record.courseFee || 28000;
+    const paid = record.paidFee || 0;
+    const pending = courseFee - paid;
+    return pending <= 0 ? 'Paid' : 'Not Paid';
+  };
+
+  const getAgeBucket = (dob) => {
+    if (!dob) return null;
+    const birthDate = new Date(dob);
+    if (isNaN(birthDate.getTime())) return null;
+    const age = new Date().getFullYear() - birthDate.getFullYear();
+    if (age < 18) return 'Under 18';
+    if (age >= 18 && age <= 24) return '18-24';
+    if (age >= 25 && age <= 30) return '25-30';
+    return '30+';
+  };
+
+  const getAcademicYearFromDOJ = (dateOfJoining) => {
+    if (!dateOfJoining) return null;
+    const dojDate = new Date(dateOfJoining);
+    if (isNaN(dojDate.getTime())) return null;
+    const year = dojDate.getFullYear();
+    const month = dojDate.getMonth();
+    const startYear = month >= 3 ? year : year - 1;
+    return `${startYear} - ${startYear + 1}`;
+  };
+
+  const generateStudentCSVData = (student) => {
+    let present = 0, absent = 0;
+    if (attendanceHistoryList) {
+      const map = new Map();
+      attendanceHistoryList.forEach(log => {
+        if (log.isFinal === false) return;
+        const rec = log.records?.find(r => r.studentName === student.name);
+        if (rec) {
+          const key = `${log.date}_${log.batchName}_${log.slot}`;
+          if (!map.has(key)) map.set(key, rec.status);
+        }
+      });
+      map.forEach(status => {
+        if (status === 'P') present++;
+        if (status === 'A') absent++;
+      });
+    }
+
+    const paidFee = student.receipts?.reduce((sum, r) => sum + (r.totalAmount || 0), 0) || 0;
+
+    return {
+      "Enrollment ID": student.enrollmentNo || student.id,
+      "Name": student.name,
+      "Email": student.email || student.gmail || 'N/A',
+      "Phone": student.phoneNumber || 'N/A',
+      "Parent Phone": student.parentPhone || 'N/A',
+      "Gender": student.gender || 'N/A',
+      "Age": student.age || 'N/A',
+      "DOB": student.dob || 'N/A',
+      "Date of Joining": student.dateOfJoining || (student.createdAt ? new Date(student.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'),
+      "Course": student.course || 'N/A',
+      "Course Fee": student.courseFee || 28000,
+      "Total Paid": paidFee,
+      "Fee Status": (student.courseFee || 28000) - paidFee <= 0 ? 'Paid' : 'Not Paid',
+      "Status": student.currentStatus || 'Active',
+      "Classes Attended": present,
+      "Classes Skipped": absent,
+      "Exams": student.examHistory ? student.examHistory.map(e => `${e.examName}: ${e.marks} (${e.grade})`).join(' | ') : 'N/A',
+      "Fee Transactions": student.feeHistory ? student.feeHistory.map(f => `₹${f.amountPaid || (f.cashAmount || 0) + (f.upiAmount || 0) + (f.cardAmount || 0) || 0} on ${f.paymentDate ? new Date(f.paymentDate).toLocaleDateString() : 'N/A'} (Receipt: ${f.billNumber || 'Manual'})`).join(' | ') : 'N/A',
+      "Data Masking": "[Aadhaar Redacted]"
+    };
+  };
+
+  const convertArrayToCSV = (dataArray) => {
+    if (!dataArray || dataArray.length === 0) return '';
+    const headers = Object.keys(dataArray[0]);
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+    for (const row of dataArray) {
+      const values = headers.map(header => {
+        const val = row[header] ?? '';
+        return `"${String(val).replace(/"/g, '""')}"`;
+      });
+      csvRows.push(values.join(','));
+    }
+    return csvRows.join('\n');
+  };
+
+  const downloadCSVBlob = (csvString, filename) => {
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleSingleProfileDownload = (student) => {
+    const data = [generateStudentCSVData(student)];
+    const csv = convertArrayToCSV(data);
+    downloadCSVBlob(csv, `${student.name.replace(/\s+/g, '_')}_Profile.csv`);
+  };
+
+  const handleBulkSingleCSV = (list) => {
+    if (list.length === 0) return message.warning('No students to download.');
+    const data = list.map(generateStudentCSVData);
+    const csv = convertArrayToCSV(data);
+    downloadCSVBlob(csv, `Master_Student_List_${new Date().getTime()}.csv`);
+  };
+
+  const handleBulkSeparateCSV = (list) => {
+    if (list.length === 0) return message.warning('No students to download.');
+    if (list.length > 20 && !window.confirm(`You are about to download ${list.length} separate files. Continue?`)) return;
+    list.forEach((student, index) => {
+      setTimeout(() => {
+        handleSingleProfileDownload(student);
+      }, index * 200);
+    });
+  };
+
+  const filteredStudentList = (list) => {
+    return list.filter(s => {
+      const matchSearch = (s.name || '').toLowerCase().includes(studentTextSearch.toLowerCase()) || 
+                          (s.enrollmentNo || '').toLowerCase().includes(studentTextSearch.toLowerCase());
+      const matchCourse = studentCourseFilter === 'All' || s.course === studentCourseFilter;
+      const bucket = getAgeBucket(s.dob);
+      const matchAge = studentAgeFilter === 'All' || bucket === studentAgeFilter;
+      
+      const academicYear = getAcademicYearFromDOJ(s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString() : null));
+      const matchAcademicYear = studentAcademicYearFilter === 'All' || academicYear === studentAcademicYearFilter;
+
+      return matchSearch && matchCourse && matchAge && matchAcademicYear;
+    });
+  };
+
+  const renderStudentList = (list) => {
+    if (list.length === 0) return <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>No students found matching your criteria.</div>;
+    return (
+      <div className="global-responsive-scroll-wrapper" style={{ overflowX: 'auto', backgroundColor: 'var(--card-bg)' }}>
+        <table style={{ width: '100%', minWidth: '950px', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead style={{ backgroundColor: 'var(--theme-bg-premium)', borderBottom: '2px solid var(--border-color)' }}>
+            <tr>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Name</th>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Course</th>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Status</th>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Fees Status</th>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Gmail</th>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Phone Number</th>
+              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map(record => {
+              const feeStatus = getFeeStatus(record);
+              const feeBg = feeStatus === 'Paid' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+              const feeColor = feeStatus === 'Paid' ? 'var(--green-500, #22c55e)' : 'var(--red-500, #ef4444)';
+              const status = record.currentStatus || 'Active';
+              const statusBg = status === 'Active' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(100, 116, 139, 0.1)';
+              const statusColor = status === 'Active' ? 'var(--blue-500, #3b82f6)' : 'var(--slate-500, #64748b)';
+              
+              return (
+                <tr key={record.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s', backgroundColor: 'var(--card-bg)' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--card-bg)'}>
+                  <td style={{ padding: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {record.documents?.profilePhotoUrl || record.photoUrl ? (
+                        <img src={record.documents?.profilePhotoUrl || record.photoUrl} alt="Avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                      ) : (
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', color: 'var(--blue-500, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
+                          {record.name?.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '14px' }}>{record.name}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>ID: {record.enrollmentNo || record.id.substring(0,6).toUpperCase()}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px', fontWeight: '500' }}>{record.course || 'N/A'}</td>
+                  <td style={{ padding: '16px' }}>
+                    <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: statusBg, color: statusColor, fontSize: '12px', fontWeight: 'bold' }}>
+                      {status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '16px' }}>
+                    <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: feeBg, color: feeColor, fontSize: '12px', fontWeight: 'bold' }}>
+                      {feeStatus}
+                    </span>
+                  </td>
+                  <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{record.email || record.gmail || 'N/A'}</td>
+                  <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{record.phoneNumber || 'N/A'}</td>
+                  <td style={{ padding: '16px', textAlign: 'right' }}>
+                    <button 
+                      onClick={() => { setSelectedStudentForProfile(record); setIsProfileModalVisible(true); }}
+                      style={{ cursor: 'pointer', padding: '6px 12px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>
+                      View Docs
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-    )}
-  ];
+    );
+  };
+
+
+
 
   const handleDeleteAssignment = async (id) => {
     try {
       await deleteCourseAssignment(id);
       message.success("Assignment removed successfully");
+      fetchStaffAndStudents();
+    } catch (error) {
+      message.error(error.message);
+    }
+  };
+
+  const handleDeleteCourse = async (id) => {
+    try {
+      await deleteCourse(id);
+      message.success("Course deleted successfully");
+      fetchStaffAndStudents();
+    } catch (error) {
+      message.error(error.message);
+    }
+  };
+
+  const handleDeleteCourseModule = async (courseId, moduleToRemove, currentModulesString) => {
+    try {
+      await deleteCourseModule(courseId, moduleToRemove, currentModulesString);
+      message.success("Module removed successfully");
       fetchStaffAndStudents();
     } catch (error) {
       message.error(error.message);
@@ -172,7 +797,7 @@ const AdminDashboard = () => {
     try {
       if (values.phoneNumber && !values.phoneNumber.startsWith('+')) values.phoneNumber = `+91${values.phoneNumber}`;
       const orgAccessId = user.organizationAccessId;
-      const result = await createStaff(user.organizationId, user.organizationName, values.name, values.email, orgAccessId, values.phoneNumber);
+      const result = await createStaff(user.organizationId, user.organizationName, values.name, values.email, orgAccessId, values.phoneNumber, values.age, values.experience, values.degree, values.address, values.facultyId);
       message.success(`Faculty created successfully linked to Organization Access ID.`);
       staffForm.resetFields();
       fetchStaffAndStudents();
@@ -191,7 +816,7 @@ const AdminDashboard = () => {
     setLogoUploading(true);
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default');
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'my_lms_preset');
 
     try {
       const res = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`, {
@@ -203,6 +828,7 @@ const AdminDashboard = () => {
       if (data.secure_url) {
         await updateOrganizationLogo(user.organizationId, data.secure_url);
         setLogoUrl(data.secure_url);
+        localStorage.setItem('org_logo', data.secure_url);
         message.success('Organization logo updated successfully!');
       } else {
         throw new Error(data.error?.message || 'Failed to upload image');
@@ -226,17 +852,20 @@ const AdminDashboard = () => {
         organizationAccessId: orgAccessId, 
         phoneNumber: values.phoneNumber,
         gender: values.gender,
-        dob: values.dob ? values.dob.format('YYYY-MM-DD') : null,
-        dateOfJoining: values.dateOfJoining ? values.dateOfJoining.format('YYYY-MM-DD') : null,
+        dob: values.dob || null,
+        dateOfJoining: values.dateOfJoining || null,
         enrollmentNo: values.enrollmentNo,
         course: values.course,
         courseFee: values.courseFee,
         parentPhone: values.parentPhone,
-        status: values.status
+        status: values.status,
+        age: values.age,
+        batch: values.batch || null
       };
       const result = await createStudent(user.organizationId, user.organizationName, studentData);
       message.success(`Student created successfully linked to Organization Access ID.`);
       studentForm.resetFields();
+      setIsAddStudentModalVisible(false);
       fetchStaffAndStudents();
     } catch (error) {
       message.error(error.message);
@@ -267,7 +896,8 @@ const AdminDashboard = () => {
             courseFee: row.CourseFee || row.courseFee || row['Course Fee'],
             phoneNumber: row.PhoneNumber || row.phoneNumber || row.StudentPhone || row['Student Phone'] || row['Phone Number'],
             parentPhone: row.ParentPhone || row.parentPhone || row['Parent Phone'],
-            status: row.Status || row.status || 'Active'
+            status: row.Status || row.status || 'Active',
+            batch: row.Batch || row.batch || null
           };
 
           if (studentData.name && studentData.email) {
@@ -312,14 +942,29 @@ const AdminDashboard = () => {
         message.success({ content: 'Files uploaded!', key: 'uploadingFiles' });
       }
 
-      await createCourse(user.organizationId, { 
-        name: values.name, 
-        description: values.description, 
-        contentUrl: values.contentUrl || null,
-        contentObjects: contentObjects 
-      });
-
-      message.success(`Course created successfully.`);
+      const existingCourse = courseList.find(c => c.name.toLowerCase() === values.name.toLowerCase());
+      
+      let finalModules = values.modules;
+      
+      if (existingCourse) {
+        const existingModules = existingCourse.modules || "";
+        finalModules = existingModules ? `${existingModules}, ${values.modules}` : values.modules;
+        
+        await updateCourse(existingCourse.id, {
+          modules: finalModules,
+          contentUrl: values.contentUrl || existingCourse.contentUrl || null,
+          contentObjects: [...(existingCourse.contentObjects || []), ...contentObjects]
+        });
+        message.success(`Course updated successfully. New modules appended.`);
+      } else {
+        await createCourse(user.organizationId, { 
+          name: values.name, 
+          modules: finalModules, 
+          contentUrl: values.contentUrl || null,
+          contentObjects: contentObjects 
+        });
+        message.success(`Course created successfully.`);
+      }
       courseForm.resetFields();
       setCourseFileList([]);
       fetchStaffAndStudents();
@@ -344,6 +989,7 @@ const AdminDashboard = () => {
         startDate: values.dateRange[0].format('YYYY-MM-DD'),
         endDate: values.dateRange[1].format('YYYY-MM-DD'),
         studentIds: values.studentIds,
+        enrolledStudentIds: values.studentIds,
         studentNames: studentNames
       };
       
@@ -364,188 +1010,397 @@ const AdminDashboard = () => {
   const menuItems = [
     {
       key: 'management',
-      icon: <Settings className="w-4 h-4" />,
+      icon: <Briefcase className="w-4 h-4" />,
       label: 'Management',
       children: [
         { key: '1', icon: <Users className="w-4 h-4" />, label: 'Manage Faculty' },
         { 
           key: '2', 
           icon: <GraduationCap className="w-4 h-4" />, 
-          label: 'Manage Students',
-          children: [
-            { key: '2-1', label: 'Add Single Student' },
-            { key: '2-2', icon: <FileSpreadsheet className="w-4 h-4" />, label: 'Bulk Import' },
-          ]
+          label: 'Manage Students'
         },
         { key: '3', icon: <BookOpen className="w-4 h-4" />, label: 'Course Management' },
+        { key: 'view-courses', icon: <BookOpen className="w-4 h-4" />, label: 'View Course' },
         { key: '4', icon: <ClipboardList className="w-4 h-4" />, label: 'Attendance Reports' },
       ],
     },
+    {
+      key: 'settings',
+      icon: <Settings className="w-4 h-4" />,
+      label: 'Settings'
+    }
   ];
 
   return (
-    <Layout className="min-h-screen bg-slate-50">
-      <Header className="bg-white border-b border-slate-200 px-8 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Organization Logo" className="h-8 object-contain" />
-          ) : (
-            <ShieldCheck className="w-6 h-6 text-indigo-600" />
-          )}
-          <h1 className="text-xl font-bold text-slate-800 m-0">Organization Admin Dashboard</h1>
+    <div className="main-dashboard-layout-wrapper" style={{ display: 'flex', flexDirection: 'row', height: '100vh', overflow: 'hidden', backgroundColor: 'var(--bg-main)', color: 'var(--text-main-dark)' }}>
+      <style>{`
+        input.search-bar-input[type="text"], div.search-bar-wrapper > input[type="text"] { padding-left: 46px !important; }
+        div.search-bar-wrapper > svg.search-bar-icon, svg.search-bar-icon { position: absolute !important; left: 14px !important; top: 50% !important; transform: translateY(-50%) !important; pointer-events: none !important; color: #6b7280 !important; z-index: 10 !important; }
+        div.search-bar-wrapper { position: relative !important; display: flex !important; align-items: center !important; }
+      `}</style>
+      {/* Sidebar Navigation */}
+      <aside className="flex flex-col h-full overflow-y-auto w-[260px] shrink-0" style={{ backgroundColor: 'var(--card-bg-clean)' }}>
+        <div className="flex flex-col items-center justify-center p-6 border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center justify-center w-24 h-24 rounded-full border-2 overflow-hidden" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-hover)' }}>
+            {logoUrl ? (
+              <img src={logoUrl} alt="Org Logo" className="w-full h-full object-contain p-2" />
+            ) : (
+              <ShieldCheck className="w-12 h-12 text-slate-400" />
+            )}
+          </div>
+          <h4 className="mt-4 text-sm font-bold text-center" style={{ color: 'var(--text-main)' }}>{user?.organizationName || 'Organization'}</h4>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right hidden sm:block">
-            <div className="text-sm font-semibold text-slate-800">{user?.name}</div>
-            <div className="text-xs text-slate-500">{user?.organizationName}</div>
-          </div>
-          <Button icon={<LogOut className="w-4 h-4" />} onClick={logoutUser}>
-            Logout
-          </Button>
-        </div>
-      </Header>
 
-      <Layout>
-        <Sider width={250} theme="light" className="border-r border-slate-200 hidden md:flex flex-col h-[calc(100vh-64px)] overflow-y-auto bg-white">
-          <div className="p-6 border-b border-slate-100 flex flex-col items-center justify-center">
-            <Upload
-              accept="image/*"
-              showUploadList={false}
-              beforeUpload={() => false}
-              onChange={handleLogoUpload}
-              disabled={logoUploading}
-              className="w-full flex flex-col items-center"
-            >
-              <div className="w-24 h-24 rounded-full border-2 border-dashed border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50 transition-all flex items-center justify-center overflow-hidden cursor-pointer shadow-sm relative group bg-slate-50">
-                {logoUrl ? (
-                  <>
-                    <img src={logoUrl} alt="Org Logo" className="w-full h-full object-contain p-2" />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <ImageIcon className="w-6 h-6 text-white" />
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-indigo-500">
-                    <ImageIcon className="w-8 h-8 mb-1" />
-                    <span className="text-[10px] font-medium uppercase tracking-wider">Upload</span>
-                  </div>
-                )}
-                {logoUploading && (
-                  <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
-                    <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                )}
-              </div>
-            </Upload>
-            <h4 className="text-sm font-semibold text-slate-700 mt-4 text-center">{user?.organizationName || 'Organization'}</h4>
-            <p className="text-xs text-slate-400 text-center mt-1">Click logo to update</p>
-          </div>
+        <nav className="flex-1 py-4 px-4">
+          <ul className="flex flex-col gap-2 list-none p-0 m-0">
+            <li className="px-4 py-2 text-xs font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>Management</li>
+            <li 
+              onClick={() => setActiveTab('1')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '1' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === '1' ? 'var(--color-primary)' : 'transparent', color: activeTab === '1' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><Users className="w-5 h-5" /> Manage Faculty</li>
+            <li 
+              onClick={() => setActiveTab('2')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '2' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === '2' ? 'var(--color-primary)' : 'transparent', color: activeTab === '2' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><GraduationCap className="w-5 h-5" /> Manage Students</li>
+            <li 
+              onClick={() => setActiveTab('journey')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'journey' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'journey' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'journey' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><Clock className="w-5 h-5" /> Student Journey Hub</li>
+            <li 
+              onClick={() => setActiveTab('3')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '3' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === '3' ? 'var(--color-primary)' : 'transparent', color: activeTab === '3' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><BookOpen className="w-5 h-5" /> Course Management</li>
+            <li 
+              onClick={() => setActiveTab('view-courses')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'view-courses' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'view-courses' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'view-courses' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><BookOpen className="w-5 h-5" /> View Course</li>
+            <li 
+              onClick={() => setActiveTab('billing')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'billing' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'billing' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'billing' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><Banknote className="w-5 h-5" /> Billing Management</li>
+            <li 
+              onClick={() => setActiveTab('admission')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'admission' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'admission' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'admission' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><UserPlus className="w-5 h-5" /> Student Admission</li>
+            <li 
+              onClick={() => setActiveTab('reports')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'reports' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'reports' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'reports' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><FileText className="w-5 h-5" /> Reports</li>
+            <li 
+              onClick={() => setActiveTab('marks')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'marks' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'marks' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'marks' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><Award className="w-5 h-5" /> Marks Management</li>
+            
+            <li className="px-4 pt-4 pb-2 text-xs font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>Configuration</li>
+            <li 
+              onClick={() => setActiveTab('settings')} 
+              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'settings' ? 'text-white' : 'hover:bg-slate-50'}`}
+              style={{ backgroundColor: activeTab === 'settings' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'settings' ? '#ffffff' : 'var(--text-secondary)' }}
+            ><Settings className="w-5 h-5" /> Settings</li>
+          </ul>
+        </nav>
+      </aside>
 
-          <div className="flex-1">
-            <Menu
-              mode="inline"
-              selectedKeys={[activeTab]}
-              openKeys={openKeys}
-              onOpenChange={setOpenKeys}
-              onClick={({ key }) => setActiveTab(key)}
-              items={menuItems}
-              className="border-r-0 pt-2"
-            />
+      {/* Main Content Area */}
+      <main className="flex flex-col h-full flex-1 main-content-display-pane">
+        {/* Header Banner */}
+        <header className="sticky top-0 z-10 flex justify-between items-center px-8 py-6 flex-wrap gap-4" style={{ backgroundColor: 'var(--card-bg-clean)' }}>
+          <div className="flex items-center gap-3">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Organization Logo" className="h-8 object-contain" />
+            ) : (
+              <ShieldCheck className="w-6 h-6 text-blue-600" />
+            )}
+            <h1 className="m-0 text-lg font-bold">Organization Admin Dashboard</h1>
           </div>
-        </Sider>
-
-        <Layout className="p-4 md:p-8 h-[calc(100vh-64px)] overflow-y-auto">
-          <Content className="max-w-5xl mx-auto w-full">
-            <div className="mb-8 p-6 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-indigo-900 mb-1">Welcome back, {user?.name}</h2>
-                <p className="text-indigo-700 m-0">Managing <span className="font-semibold">{user?.organizationName}</span></p>
-              </div>
-              <div className="bg-white px-4 py-2 rounded-lg border border-indigo-100 shadow-sm">
-                <span className="text-xs text-slate-500 block">Organization Access ID</span>
-                <span className="font-mono font-bold text-slate-800">{user?.organizationAccessId}</span>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex flex-col items-end gap-1">
+              <div className="text-sm font-bold">{user?.name || 'Admin'}</div>
+              <div className="text-xs font-bold text-slate-500" style={{ color: 'var(--text-secondary)' }}>
+                Access ID: <span className="text-blue-600">{user?.organizationName}</span>
               </div>
             </div>
+            <button onClick={logoutUser} className="top-logout-btn flex items-center gap-2">
+              <LogOut className="w-4 h-4" /> Logout
+            </button>
+          </div>
+        </header>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        {/* Content Wrapper */}
+        <div className="p-6 w-full max-w-6xl mx-auto box-border">
+          
+          <div style={{ marginBottom: '24px', padding: '24px', backgroundColor: 'var(--indigo-50, #eef2ff)', border: '1px solid var(--indigo-100, #e0e7ff)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 'bold', color: 'var(--indigo-900, #312e81)' }}>Welcome back, {user?.name}</h2>
+              <p style={{ margin: 0, color: 'var(--indigo-700, #4338ca)' }}>Managing <span style={{ fontWeight: 'bold' }}>{user?.organizationName}</span></p>
+            </div>
+            <div style={{ backgroundColor: 'var(--card-bg)', padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Organization Access ID</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px' }}>{user?.organizationAccessId}</span>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
               {activeTab === '1' && (
-                <div className="flex flex-col gap-8 items-center">
-                  <div className="w-full max-w-2xl bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                    <h3 className="text-lg font-semibold mb-4 text-slate-800">Add New Faculty Member</h3>
-                    <Form form={staffForm} layout="vertical" onFinish={handleCreateStaff}>
-                      <Form.Item name="name" label="Faculty Name" rules={[{ required: true }]}>
-                        <Input placeholder="Enter faculty name" size="large" />
-                      </Form.Item>
-                      <Form.Item name="email" label="Faculty Email" rules={[{ required: true, type: 'email' }]}>
-                        <Input placeholder="Enter faculty email" size="large" />
-                      </Form.Item>
-                      <Form.Item name="phoneNumber" label="Faculty Phone Number" rules={[{ required: true }]}>
-                        <Input placeholder="Enter faculty phone number" size="large" addonBefore={<span>+91 (IN)</span>} />
-                      </Form.Item>
-                      <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full bg-indigo-600">
-                        Create Faculty Member
-                      </Button>
-                    </Form>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Manage Faculty</h3>
+                    <button onClick={() => setIsAddFacultyModalVisible(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}>
+                      <UserPlus className="w-5 h-5" /> Add Faculty
+                    </button>
                   </div>
-                  <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
-                    <h3 className="text-lg font-semibold mb-4 text-slate-800">Manage Faculty</h3>
-                    <div className="w-full overflow-x-auto">
-                      <Table dataSource={staffList} columns={staffColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} />
+                  
+                  <div className="search-bar-wrapper" style={{ marginTop: '16px', marginBottom: '16px' }}>
+                    <Search className="search-bar-icon" />
+                    <input 
+                      className="search-bar-input"
+                      type="text" 
+                      placeholder="Search by Name, Email, or Faculty ID..." 
+                      value={facultySearchQuery}
+                      onChange={(e) => setFacultySearchQuery(e.target.value)}
+                      style={{ width: '100%', padding: '10px 10px 10px 40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '14px', backgroundColor: 'var(--panel-solid-white)', color: 'var(--text-main)', outline: 'none' }}
+                    />
+                  </div>
+
+                  {(() => {
+                    const filteredStaffList = staffList.filter(s => {
+                      const q = facultySearchQuery.toLowerCase();
+                      return (s.name || '').toLowerCase().includes(q) || 
+                             (s.email || '').toLowerCase().includes(q) || 
+                             (s.facultyId || '').toLowerCase().includes(q);
+                    });
+                    return (
+                      <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
+                        <div className="w-full overflow-x-auto">
+                          <Table dataSource={filteredStaffList} columns={staffColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} />
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {isAddFacultyModalVisible && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+                        <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Add New Faculty Member</h2>
+                        <form onSubmit={(e) => { 
+                          e.preventDefault(); 
+                          handleCreateStaff(staffForm.getFieldsValue()); 
+                          setIsAddFacultyModalVisible(false);
+                        }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Name</label>
+                            <input type="text" placeholder="Enter faculty name" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({name: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty ID</label>
+                            <input type="text" placeholder="Enter Faculty/Employee ID" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({facultyId: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Email</label>
+                            <input type="email" placeholder="Enter faculty email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({email: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Phone Number</label>
+                            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                              <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
+                              <input type="text" placeholder="Enter faculty phone number" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({phoneNumber: e.target.value})} />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Age (Optional)</label>
+                            <input type="number" placeholder="Enter age" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({age: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Previous Experience / Workplace (Optional)</label>
+                            <input type="text" placeholder="e.g. 5 Years at XYZ Institute" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({experience: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Degree / Qualification (Optional)</label>
+                            <input type="text" placeholder="e.g. Ph.D. in Physics" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({degree: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Address (Optional)</label>
+                            <textarea placeholder="Enter complete address" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box', minHeight: '80px', resize: 'vertical' }} onChange={(e) => staffForm.setFieldsValue({address: e.target.value})} />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+                            <button type="button" onClick={() => setIsAddFacultyModalVisible(false)} style={{ padding: '10px 24px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                            <button type="submit" disabled={loading} style={{ padding: '10px 24px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Create Faculty</button>
+                          </div>
+                        </form>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {isViewFacultyModalVisible && selectedViewFaculty && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative' }}>
+                        
+                        <button 
+                          onClick={() => setIsViewFacultyModalVisible(false)}
+                          style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px' }}
+                        >
+                          <X className="w-6 h-6 text-slate-400 hover:text-slate-700" />
+                        </button>
+
+                        <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', borderBottom: '1px solid #e5e7eb', paddingBottom: '16px', marginBottom: '24px', color: '#111827' }}>
+                          Faculty Details
+                        </h2>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Faculty ID</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.facultyId || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Full Name</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.name || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Email</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.email || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Phone Number</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.phoneNumber ? `+91 ${selectedViewFaculty.phoneNumber}` : 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Age</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.age || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Previous Experience</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.experience || 'N/A'}</div>
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Degree / Qualification</div>
+                            <div style={{ fontSize: '15px' }}>{selectedViewFaculty.degree || 'N/A'}</div>
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <div style={{ fontWeight: 'bold', color: '#4b5563', fontSize: '13px', textTransform: 'uppercase', marginBottom: '4px' }}>Address</div>
+                            <div style={{ fontSize: '15px', lineHeight: '1.5' }}>{selectedViewFaculty.address || 'N/A'}</div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '32px' }}>
+                          <button 
+                            onClick={() => setIsViewFacultyModalVisible(false)} 
+                            style={{ padding: '10px 24px', backgroundColor: '#f3f4f6', color: '#111827', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {(activeTab === '2-1' || activeTab === '2-2') && (
+              {(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
                 <div className="flex flex-col gap-8 items-center">
-                  {activeTab === '2-1' && (
-                    <div className="w-full max-w-2xl bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                      <h3 className="text-lg font-semibold mb-4 text-slate-800">Add Single Student</h3>
-                      <Form form={studentForm} layout="vertical" onFinish={handleCreateStudent}>
-                        <Form.Item name="enrollmentNo" label="Enrollment No." rules={[{ required: true }]}>
-                          <Input placeholder="Enrollment Number" size="large" />
-                        </Form.Item>
-                        <Form.Item name="course" label="Course" rules={[{ required: true }]}>
-                          <Input placeholder="Course Name" size="large" />
-                        </Form.Item>
-                        <Form.Item name="name" label="Student Name" rules={[{ required: true }]}>
-                          <Input placeholder="Enter student name" size="large" />
-                        </Form.Item>
-                        <Form.Item name="gender" label="Gender" rules={[{ required: true }]}>
-                          <Select placeholder="Select Gender" size="large">
-                            <Select.Option value="Male">Male</Select.Option>
-                            <Select.Option value="Female">Female</Select.Option>
-                            <Select.Option value="Other">Other</Select.Option>
-                          </Select>
-                        </Form.Item>
-                        <Form.Item name="dob" label="Date of Birth" rules={[{ required: true }]}>
-                          <DatePicker className="w-full" size="large" />
-                        </Form.Item>
-                        <Form.Item name="dateOfJoining" label="Date of Joining" rules={[{ required: true }]}>
-                          <DatePicker className="w-full" size="large" />
-                        </Form.Item>
-                        <Form.Item name="courseFee" label="Course Fee">
-                          <Input type="number" placeholder="Course Fee" size="large" />
-                        </Form.Item>
-                        <Form.Item name="phoneNumber" label="Student Phone Number" rules={[{ required: true }]}>
-                          <Input placeholder="Enter student phone number" size="large" addonBefore={<span>+91 (IN)</span>} />
-                        </Form.Item>
-                        <Form.Item name="parentPhone" label="Parent Phone Number">
-                          <Input placeholder="Parent Phone" size="large" addonBefore={<span>+91 (IN)</span>} />
-                        </Form.Item>
-                        <Form.Item name="status" label="Status" rules={[{ required: true }]}>
-                          <Select placeholder="Select Status" size="large">
-                            <Select.Option value="Active">Active</Select.Option>
-                            <Select.Option value="Passed Out">Passed Out</Select.Option>
-                          </Select>
-                        </Form.Item>
-                        <Form.Item name="email" label="Student Email" rules={[{ required: true, type: 'email' }]}>
-                          <Input placeholder="Enter student email" size="large" />
-                        </Form.Item>
-                        <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full bg-blue-600">
-                          Create Student
-                        </Button>
-                      </Form>
+                  {isAddStudentModalVisible && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+                        <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Add Single Student</h2>
+                        <form onSubmit={(e) => { 
+                          e.preventDefault(); 
+                          const currentVals = studentForm.getFieldsValue();
+                          handleCreateStudent({
+                            enrollmentNo: currentVals.enrollmentNo || "",
+                            course: currentVals.course || "",
+                            name: currentVals.name || "",
+                            gender: currentVals.gender || "",
+                            age: currentVals.age !== undefined ? currentVals.age : "",
+                            batch: currentVals.batch || "",
+                            dob: currentVals.dob || "",
+                            dateOfJoining: currentVals.dateOfJoining || "",
+                            courseFee: currentVals.courseFee !== undefined ? currentVals.courseFee : "",
+                            phoneNumber: currentVals.phoneNumber || "",
+                            parentPhone: currentVals.parentPhone || "",
+                            status: currentVals.status || "Active",
+                            email: currentVals.email || ""
+                          }); 
+                        }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Enrollment No.</label>
+                            <input type="text" placeholder="Enrollment Number" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({enrollmentNo: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Course</label>
+                            <input type="text" placeholder="Course Name" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({course: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Name</label>
+                            <input type="text" placeholder="Enter student name" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({name: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Gender</label>
+                            <select required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({gender: e.target.value})}>
+                              <option value="">Select Gender</option>
+                              <option value="Male">Male</option>
+                              <option value="Female">Female</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Age</label>
+                            <input type="number" placeholder="Enter age" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({age: Number(e.target.value)})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Batch</label>
+                            <input type="text" placeholder="Enter the Batch (e.g., 2026 / 2028)" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({batch: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Date of Birth</label>
+                            <input type="date" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({dob: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Date of Joining</label>
+                            <input type="date" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({dateOfJoining: e.target.value})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Course Fee</label>
+                            <input type="number" placeholder="Course Fee" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({courseFee: Number(e.target.value)})} />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Phone Number</label>
+                            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                              <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
+                              <input type="text" placeholder="Enter student phone number" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({phoneNumber: e.target.value})} />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
+                            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                              <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
+                              <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({parentPhone: e.target.value})} />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Status</label>
+                            <select required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({status: e.target.value})}>
+                              <option value="Active">Active</option>
+                              <option value="Passed Out">Passed Out</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Email</label>
+                            <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({email: e.target.value})} />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                            <button type="button" onClick={() => setIsAddStudentModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                            <button type="submit" disabled={loading} style={{ padding: '8px 16px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Create Student</button>
+                          </div>
+                        </form>
+                      </div>
                     </div>
                   )}
 
@@ -554,13 +1409,13 @@ const AdminDashboard = () => {
                       <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 text-indigo-800 text-sm text-center shadow-sm">
                         <strong>Instructions:</strong> Please upload a CSV file with columns <code>Name</code>, <code>Email</code>, <code>Gender</code>, <code>DOB</code>, <code>DateOfJoining</code>, <code>EnrollmentNo</code>, <code>Course</code>, <code>CourseFee</code>, <code>StudentPhone</code>, <code>ParentPhone</code>, <code>Status</code>.
                       </div>
-                      <div className="w-full">
+                      <div className="w-full flex flex-col items-center gap-4">
                         <Dragger
                           accept=".csv"
                           beforeUpload={processCSV}
                           showUploadList={false}
                           disabled={csvUploading}
-                          className="p-10 bg-white border-2 border-dashed border-slate-300 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
+                          className="w-full p-10 bg-white border-2 border-dashed border-slate-300 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm"
                         >
                           <p className="ant-upload-drag-icon">
                             <UploadCloud className="w-14 h-14 text-indigo-500 mx-auto mb-4" />
@@ -570,14 +1425,125 @@ const AdminDashboard = () => {
                             Strictly single CSV file upload. {csvUploading && <span className="text-indigo-600 font-semibold animate-pulse block mt-2">Processing...</span>}
                           </p>
                         </Dragger>
+                        <Button size="large" className="w-full max-w-xs mt-2" onClick={() => setActiveTab('2')}>
+                          Cancel Bulk Import
+                        </Button>
                       </div>
                     </div>
                   )}
 
                   <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
-                    <h3 className="text-lg font-semibold mb-4 text-slate-800">Manage Students</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Students</div>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.length}</div>
+                      </div>
+                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #22c55e', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active</div>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
+                      </div>
+                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #3b82f6', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Completed</div>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Completed').length}</div>
+                      </div>
+                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #ef4444', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Drop-out</div>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Drop-out').length}</div>
+                      </div>
+                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #64748b', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Inactive</div>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Inactive').length}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                      <h3 style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--text-primary-crisp, #0f172a)', margin: 0 }}>Manage Students</h3>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button type="button" onClick={() => { setGlobalSearchAction('edit'); setGlobalSearchModalVisible(true); }} style={{ padding: '10px 20px', backgroundColor: 'transparent', color: 'var(--accent-royal-purple, #6366f1)', border: '2px solid var(--accent-royal-purple, #6366f1)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-royal-purple, #6366f1)'; e.currentTarget.style.color = '#fff'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--accent-royal-purple, #6366f1)'; }}>
+                          Edit Student
+                        </button>
+                        <button type="button" onClick={() => { setGlobalSearchAction('delete'); setGlobalSearchModalVisible(true); }} style={{ padding: '10px 20px', backgroundColor: 'transparent', color: '#ef4444', border: '2px solid #ef4444', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = '#fff'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#ef4444'; }}>
+                          Delete Student
+                        </button>
+                        <Dropdown 
+                          menu={{ 
+                            items: [
+                              { key: 'single', label: 'Add Single Student' },
+                              { key: 'bulk', label: 'Bulk Import' }
+                            ], 
+                            onClick: ({ key }) => {
+                              if (key === 'single') setIsAddStudentModalVisible(true);
+                              if (key === 'bulk') setActiveTab('2-2');
+                            }
+                          }} 
+                          placement="bottomRight"
+                        >
+                          <button style={{ padding: '10px 20px', backgroundColor: 'var(--accent-royal-purple, #6366f1)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(99, 102, 241, 0.2)' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#4f46e5'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-royal-purple, #6366f1)'}>
+                            Add Student ▼
+                          </button>
+                        </Dropdown>
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'center', backgroundColor: 'var(--card-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                      <div className="search-bar-wrapper" style={{ flex: 1 }}>
+                        <Search className="search-bar-icon" />
+                        <input 
+                          className="search-bar-input"
+                          type="text" 
+                          placeholder="Search by Student Name or Enrollment Number..." 
+                          value={studentTextSearch}
+                          onChange={(e) => setStudentTextSearch(e.target.value)}
+                          style={{ width: '100%', padding: '10px 10px 10px 40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '14px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', outline: 'none' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <select 
+                          value={studentCourseFilter}
+                          onChange={(e) => setStudentCourseFilter(e.target.value)}
+                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
+                        >
+                          <option value="All">All Courses</option>
+                          {courseList.map(course => (
+                            <option key={course.id || course.name} value={course.name}>{(course.name || "").replace(" (Full Course)", "")}</option>
+                          ))}
+                        </select>
+                        <select 
+                          value={studentAgeFilter}
+                          onChange={(e) => setStudentAgeFilter(e.target.value)}
+                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
+                        >
+                          <option value="All">All Ages</option>
+                          <option value="Under 18">Under 18</option>
+                          <option value="18-24">18 - 24</option>
+                          <option value="25-30">25 - 30</option>
+                          <option value="30+">30+</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div className="w-full overflow-x-auto">
-                      <Table dataSource={studentList} columns={studentColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} />
+                      <Tabs 
+                        activeKey={studentManagementTab} 
+                        onChange={setStudentManagementTab}
+                        items={[
+                          {
+                            key: 'active',
+                            label: 'Active & Inactive Students',
+                            children: renderStudentList(filteredStudentList(studentList.filter(s => (s.currentStatus || 'Active') === 'Active' || s.currentStatus === 'Inactive')))
+                          },
+                          {
+                            key: 'dropout',
+                            label: 'Drop-out List',
+                            children: renderStudentList(filteredStudentList(studentList.filter(s => s.currentStatus === 'Drop-out')))
+                          },
+                          {
+                            key: 'completed',
+                            label: 'Completed / Passed-out List',
+                            children: renderStudentList(filteredStudentList(studentList.filter(s => s.currentStatus === 'Completed')))
+                          }
+                        ]}
+
+                      />
                     </div>
                   </div>
                 </div>
@@ -592,13 +1558,13 @@ const AdminDashboard = () => {
                         <Form.Item name="name" label="Course Name" rules={[{ required: true }]}>
                           <Input placeholder="Enter custom course name" size="large" />
                         </Form.Item>
-                        <Form.Item name="description" label="Description">
-                          <Input.TextArea placeholder="Course description" rows={3} />
+                        <Form.Item name="modules" label="Modules">
+                          <Input.TextArea placeholder="Enter course modules separated by commas or newlines" rows={3} />
                         </Form.Item>
-                        <Form.Item name="contentUrl" label="Content Link (Drive/Docs)">
-                          <Input placeholder="Enter URL" size="large" />
+                        <Form.Item name="contentUrl" label="Syllabus & GitHub Repository Links">
+                          <Input placeholder="Enter Syllabus or GitHub URLs" size="large" />
                         </Form.Item>
-                        <Form.Item label="Upload Content Files (PDFs/Images)">
+                        <Form.Item label="Upload Official Syllabus PDF">
                           <Upload.Dragger
                             multiple
                             beforeUpload={() => false}
@@ -612,7 +1578,7 @@ const AdminDashboard = () => {
                             <p className="text-slate-600 font-medium">Click or drag files to upload</p>
                           </Upload.Dragger>
                         </Form.Item>
-                        <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full bg-indigo-600">
+                        <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
                           Create Course
                         </Button>
                       </Form>
@@ -622,8 +1588,37 @@ const AdminDashboard = () => {
                       <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><Calendar className="w-5 h-5 text-green-500" /> Assign Faculty to Course</h3>
                       <Form form={assignmentForm} layout="vertical" onFinish={handleCreateAssignment}>
                         <Form.Item name="courseName" label="Select Course or Module" rules={[{ required: true }]}>
-                          <Select placeholder="Select a course or specific module (e.g., Python, Tally, MS Office)" size="large" onChange={(val) => setSelectedCourseForEnrollment(val)}>
-                            {courseList.map(course => <Select.Option key={course.id} value={course.name}>{course.name}</Select.Option>)}
+                          <Select 
+                            showSearch
+                            placeholder="Select a course or specific module" 
+                            size="large" 
+                            onChange={(val) => setSelectedCourseForEnrollment(val)}
+                            onSearch={(val) => setCourseSearchQuery(val)}
+                            filterOption={(input, option) =>
+                              (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                          >
+                            <Select.OptGroup label={<span className="font-bold text-slate-800">COURSES</span>}>
+                              {courseList.map(course => {
+                                const cleanName = (course.name || "").replace(" (Full Course)", "");
+                                return (
+                                  <Select.Option key={`course-${course.id}`} value={course.name}>
+                                    {renderHighlightedText(cleanName, courseSearchQuery)}
+                                  </Select.Option>
+                                );
+                              })}
+                            </Select.OptGroup>
+                            <Select.OptGroup label={<span className="font-bold text-slate-800">SUBJECTS / MODULES</span>}>
+                              {Array.from(new Set(
+                                courseList.flatMap(course => 
+                                  (course.modules || "").split(/[\n,]+/).map(m => m.trim()).filter(m => m)
+                                )
+                              )).map(module => (
+                                <Select.Option key={`module-${module}`} value={module}>
+                                  {renderHighlightedText(module, courseSearchQuery)}
+                                </Select.Option>
+                              ))}
+                            </Select.OptGroup>
                           </Select>
                         </Form.Item>
                         <Form.Item name="staffId" label="Assign Faculty Member" rules={[{ required: true }]}>
@@ -644,7 +1639,7 @@ const AdminDashboard = () => {
                             size="large"
                             maxTagCount={0}
                             maxTagPlaceholder={(omitted) => `${omitted.length} Students Selected`}
-                            dropdownRender={() => {
+                            popupRender={() => {
                               const baseList = studentList.filter(s => !selectedCourseForEnrollment || s.course === selectedCourseForEnrollment);
                               
                               const sortedStudents = [...baseList].sort((a, b) => {
@@ -706,7 +1701,7 @@ const AdminDashboard = () => {
                             {studentList.map(s => <Select.Option key={s.id} value={s.id}>{s.name}</Select.Option>)}
                           </Select>
                         </Form.Item>
-                        <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full bg-green-600 border-none hover:bg-green-700 text-white">
+                        <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full border-none">
                           Assign Course
                         </Button>
                       </Form>
@@ -722,97 +1717,2249 @@ const AdminDashboard = () => {
                 </div>
               )}
 
-              {activeTab === '4' && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
-                  <h3 className="text-lg font-semibold mb-4 text-slate-800">Organization Attendance Reports</h3>
-                  <div className="w-full overflow-x-auto">
-                    <Table 
-                      dataSource={attendanceHistoryList} 
-                      rowKey="id" 
-                      pagination={{ pageSize: 10 }} 
-                      scroll={{ x: 'max-content' }}
-                      expandedRowKeys={expandedRowId ? [expandedRowId] : []}
-                      onRow={(record) => ({
-                        onClick: () => setExpandedRowId(expandedRowId === record.id ? null : record.id),
-                        className: "cursor-pointer hover:bg-slate-50 transition-colors"
-                      })}
-                      expandable={{
-                        showExpandColumn: false,
-                        expandedRowRender: record => (
-                          <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner my-2">
-                            <h4 className="font-bold text-slate-800 mb-4 text-lg border-b border-slate-200 pb-2">Student Attendance List</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-                              {record.records && Array.isArray(record.records) ? record.records.map((r, i) => (
-                                <div key={i} className="flex justify-between items-center bg-white p-3 border border-slate-200 rounded-lg shadow-sm hover:border-blue-200 transition-colors">
-                                  <span className="font-medium text-slate-700">{r.studentName}</span>
-                                  {r.status === 'P' ? (
-                                    <span className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-md text-sm font-bold"><CheckCircle className="w-4 h-4" /> Present</span>
-                                  ) : (
-                                    <span className="flex items-center gap-1 text-red-600 bg-red-50 px-2 py-1 rounded-md text-sm font-bold"><XCircle className="w-4 h-4" /> Absent</span>
-                                  )}
-                                </div>
-                              )) : <p className="p-4 text-slate-500 italic col-span-full">No records found for this batch.</p>}
+              {activeTab === 'view-courses' && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full course-catalog-container">
+                  <h3 className="text-lg font-semibold mb-4 text-slate-800">Master Course Catalog</h3>
+                  <Collapse 
+                    className="course-accordion bg-slate-50 border-slate-200"
+                    items={courseList.map(course => ({
+                      key: course.id,
+                      label: <span className="font-bold text-slate-700">{(course.name || "").replace(" (Full Course)", "")}</span>,
+                      className: "course-panel",
+                      extra: (
+                        <Popconfirm title="Delete this entire course?" onConfirm={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }} okText="Yes" cancelText="No">
+                          <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} onClick={e => e.stopPropagation()} />
+                        </Popconfirm>
+                      ),
+                      children: course.modules ? (
+                        <div className="flex flex-col gap-2">
+                          {course.modules.split(/[\n,]+/).map(m => m.trim()).filter(m => m).map(module => (
+                            <div key={`${course.id}-${module}`} className="module-row flex justify-between items-center p-3 bg-white border border-slate-200 rounded-md shadow-sm">
+                              <span className="text-slate-600 font-medium">{module}</span>
+                              <Popconfirm title="Remove this module from the course?" onConfirm={() => handleDeleteCourseModule(course.id, module, course.modules)} okText="Yes" cancelText="No">
+                                <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} />
+                              </Popconfirm>
                             </div>
-                            <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                              <div className="text-slate-700 font-semibold mb-3 sm:mb-0 text-lg flex items-center gap-4">
-                                <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500"></span> Total Present: {record.totalPresentees !== undefined ? record.totalPresentees : (record.records?.filter(rec => rec.status === 'P').length || 0)}</span>
-                                <span className="text-slate-300">|</span>
-                                <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-500"></span> Total Absent: {record.totalAbsentees !== undefined ? record.totalAbsentees : (record.records?.filter(rec => rec.status === 'A').length || 0)}</span>
-                              </div>
-                              <Button 
-                                type="primary" 
-                                icon={<Download className="w-4 h-4" />} 
-                                onClick={(e) => { e.stopPropagation(); downloadAttendanceCSV(record); }}
-                                className="bg-indigo-600 hover:bg-indigo-700 border-none shadow-md px-6"
-                              >
-                                Download Report
-                              </Button>
-                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-slate-500 italic m-0 p-3">No specific modules defined.</p>
+                      )
+                    }))}
+                  />
+                </div>
+              )}
+
+              {false && (() => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                const filteredAttendance = attendanceHistoryList.filter(record => {
+                  const matchTab = attendanceReportTab === 'daily' ? record.date === todayStr : record.date !== todayStr;
+                  const matchBatch = attendanceBatchFilter === 'All' ? true : record.batchName === attendanceBatchFilter;
+                  const matchFaculty = attendanceFacultyFilter === 'All' ? true : record.facultyName === attendanceFacultyFilter;
+                  return matchTab && matchBatch && matchFaculty;
+                });
+                
+                return (
+                  <div style={{ backgroundColor: 'var(--panel-solid-white)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px', width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                      <div style={{ display: 'flex', gap: '16px', borderBottom: '2px solid var(--border-color)' }}>
+                        <button 
+                          onClick={() => setAttendanceReportTab('daily')}
+                          style={{ padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: attendanceReportTab === 'daily' ? '2px solid var(--blue-500, #3b82f6)' : '2px solid transparent', color: attendanceReportTab === 'daily' ? 'var(--blue-500, #3b82f6)' : 'var(--text-secondary)', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginBottom: '-2px', transition: 'all 0.2s' }}
+                        >Daily Attendance</button>
+                        <button 
+                          onClick={() => setAttendanceReportTab('history')}
+                          style={{ padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: attendanceReportTab === 'history' ? '2px solid var(--blue-500, #3b82f6)' : '2px solid transparent', color: attendanceReportTab === 'history' ? 'var(--blue-500, #3b82f6)' : 'var(--text-secondary)', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginBottom: '-2px', transition: 'all 0.2s' }}
+                        >Attendance History</button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '16px' }}>
+                        <select 
+                          value={attendanceBatchFilter}
+                          onChange={(e) => setAttendanceBatchFilter(e.target.value)}
+                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', fontSize: '14px', outline: 'none', cursor: 'pointer', minWidth: '160px' }}
+                        >
+                          <option value="All">All Batches</option>
+                          {courseList.map(c => <option key={c.id} value={c.name}>{(c.name || "").replace(" (Full Course)", "")}</option>)}
+                        </select>
+                        
+                        <select 
+                          value={attendanceFacultyFilter}
+                          onChange={(e) => setAttendanceFacultyFilter(e.target.value)}
+                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', fontSize: '14px', outline: 'none', cursor: 'pointer', minWidth: '160px' }}
+                        >
+                          <option value="All">All Faculty</option>
+                          {staffList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="global-responsive-scroll-wrapper" style={{ overflowX: 'auto', backgroundColor: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead style={{ backgroundColor: 'var(--theme-bg-premium)', borderBottom: '2px solid var(--border-color)' }}>
+                          <tr>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Date</th>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Batch Name</th>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Faculty</th>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Total Students</th>
+                            <th style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '12px', textTransform: 'uppercase' }}>Present</th>
+                            <th style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '12px', textTransform: 'uppercase' }}>Absent</th>
+                            <th style={{ padding: '16px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredAttendance.length > 0 ? filteredAttendance.map(record => {
+                            const totalPresent = record.totalPresentees !== undefined ? record.totalPresentees : (record.records?.filter(rec => rec.status === 'P').length || 0);
+                            const totalAbsent = record.totalAbsentees !== undefined ? record.totalAbsentees : (record.records?.filter(rec => rec.status === 'A').length || 0);
+                            return (
+                                <tr key={`row-${record.id}`} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--card-bg)', transition: 'background-color 0.2s' }}>
+                                  <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px', fontWeight: '500' }}>{new Date(record.date).toLocaleDateString()}</td>
+                                  <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>{record.batchName}</td>
+                                  <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{record.facultyName}</td>
+                                  <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{record.records?.length || 0}</td>
+                                  <td style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '14px', fontWeight: 'bold' }}>{totalPresent}</td>
+                                  <td style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '14px', fontWeight: 'bold' }}>{totalAbsent}</td>
+                                  <td style={{ padding: '16px', textAlign: 'right' }}>
+                                    <button 
+                                      onClick={() => setSelectedAttendanceReport(record)}
+                                      style={{ padding: '8px 16px', backgroundColor: 'var(--blue-500, #3b82f6)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                                    >
+                                      View Details
+                                    </button>
+                                  </td>
+                                </tr>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan="7" style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                                No attendance records found matching your filters.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {selectedAttendanceReport && (
+                      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                        <div style={{ backgroundColor: 'var(--panel-solid-white)', width: '90%', maxWidth: '800px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+                          
+                          <div style={{ padding: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h4 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                              Detailed Summary - {selectedAttendanceReport.batchName} ({new Date(selectedAttendanceReport.date).toLocaleDateString()})
+                            </h4>
+                            <button 
+                              onClick={() => setSelectedAttendanceReport(null)}
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
+                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <X className="w-6 h-6" style={{ color: 'var(--text-secondary)' }} />
+                            </button>
                           </div>
-                        )
-                      }}
-                      columns={[
-                        { title: 'Date', dataIndex: 'date', key: 'date', width: 120 },
-                        { title: 'Batch Name', dataIndex: 'batchName', key: 'batchName', width: 150 },
-                        { title: 'Faculty', dataIndex: 'facultyName', key: 'facultyName', width: 150 },
-                        { title: 'Time Slot', dataIndex: 'slot', key: 'slot', width: 150 },
-                        { title: 'Total Students', render: (_, r) => r.records?.length || 0, width: 120 },
-                        { title: 'Present', render: (_, r) => r.totalPresentees !== undefined ? r.totalPresentees : (r.records?.filter(rec => rec.status === 'P').length || 0), className: 'text-green-600 font-semibold', width: 100 },
-                        { title: 'Absent', render: (_, r) => r.totalAbsentees !== undefined ? r.totalAbsentees : (r.records?.filter(rec => rec.status === 'A').length || 0), className: 'text-red-600 font-semibold', width: 100 }
-                      ]}
-                    />
+                          
+                          <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px', alignContent: 'start' }}>
+                            {selectedAttendanceReport.records && Array.isArray(selectedAttendanceReport.records) ? selectedAttendanceReport.records.map((r, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--card-bg)', padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+                                <span style={{ fontWeight: '600', color: 'var(--text-main)', fontSize: '15px' }}>{r.studentName}</span>
+                                {r.status === 'P' ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--green-600, #16a34a)', backgroundColor: 'rgba(22,163,74,0.1)', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold' }}>Present</span>
+                                ) : (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--red-600, #dc2626)', backgroundColor: 'rgba(220,38,38,0.1)', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold' }}>Absent</span>
+                                )}
+                              </div>
+                            )) : <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>No records found for this batch.</p>}
+                          </div>
+                          
+                          <div style={{ padding: '24px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', borderRadius: '0 0 16px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--green-500, #22c55e)' }}></div>
+                                Total Present: {selectedAttendanceReport.totalPresentees !== undefined ? selectedAttendanceReport.totalPresentees : (selectedAttendanceReport.records?.filter(rec => rec.status === 'P').length || 0)}
+                              </div>
+                              <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)' }}></div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--red-500, #ef4444)' }}></div>
+                                Total Absent: {selectedAttendanceReport.totalAbsentees !== undefined ? selectedAttendanceReport.totalAbsentees : (selectedAttendanceReport.records?.filter(rec => rec.status === 'A').length || 0)}
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => downloadAttendanceCSV(selectedAttendanceReport)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', backgroundColor: 'var(--blue-600, #2563eb)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}
+                            >
+                              <Download className="w-4 h-4" /> Download Report
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {activeTab === 'billing' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  {/* Annual Financial Overview */}
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                      <p style={{ margin: '0 0 8px 0', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Cumulative Fees Collected</p>
+                      <h2 style={{ margin: 0, fontSize: '32px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>
+                        ₹{studentList.reduce((sum, s) => sum + (s.paidFee || 0), 0).toLocaleString()}
+                      </h2>
+                    </div>
+                    <div style={{ flex: 1, backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                      <p style={{ margin: '0 0 8px 0', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Overdue Pending</p>
+                      <h2 style={{ margin: 0, fontSize: '32px', color: 'var(--red-600, #dc2626)', fontWeight: 'bold' }}>
+                        ₹{studentList.reduce((sum, s) => { const pending = (s.courseFee || 28000) - (s.paidFee || 0); return sum + (pending > 0 ? pending : 0); }, 0).toLocaleString()}
+                      </h2>
+                    </div>
+                  </div>
+
+                  {/* Dual Partition UI Tabs */}
+                  <div style={{ display: 'flex', borderBottom: '2px solid var(--border-color)', gap: '32px' }}>
+                    <button 
+                      onClick={() => setBillingTab('ledger')}
+                      style={{ padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: billingTab === 'ledger' ? 'var(--blue-600, #2563eb)' : 'var(--text-secondary)', borderBottom: billingTab === 'ledger' ? '3px solid var(--blue-600, #2563eb)' : '3px solid transparent', marginBottom: '-2px' }}
+                    >
+                      Comprehensive Ledger
+                    </button>
+                    <button 
+                      onClick={() => setBillingTab('due_list')}
+                      style={{ padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: billingTab === 'due_list' ? 'var(--blue-600, #2563eb)' : 'var(--text-secondary)', borderBottom: billingTab === 'due_list' ? '3px solid var(--blue-600, #2563eb)' : '3px solid transparent', marginBottom: '-2px' }}
+                    >
+                      Fees Not Paid / Due List
+                    </button>
+                  </div>
+
+                  {/* Tab 1: Comprehensive Ledger */}
+                  {billingTab === 'ledger' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                        <button onClick={downloadTodaysCollectionCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                          <Download className="w-4 h-4" /> Download Today's Collection
+                        </button>
+                        <button onClick={downloadStudentLedgerCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                          <Download className="w-4 h-4" /> Track Ledger
+                        </button>
+                      </div>
+
+                      {/* Month-Wise Grids */}
+                      {(() => {
+                        const groupedRows = billingRows.reduce((acc, row) => {
+                          if (!acc[row.billMonth]) acc[row.billMonth] = [];
+                          acc[row.billMonth].push(row);
+                          return acc;
+                        }, {});
+                        
+                        return Object.entries(groupedRows).map(([month, rows]) => {
+                          const totalCollected = rows.reduce((sum, r) => sum + (Number(r.amountPaid) || 0), 0);
+                          const totalOutstanding = rows.reduce((sum, r) => sum + (Number(r.balance) || 0), 0);
+
+                          return (
+                            <div key={month} style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                              <div style={{ padding: '16px 24px', backgroundColor: 'var(--theme-bg-premium)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>{month} Ledger</h3>
+                                <div style={{ display: 'flex', gap: '16px' }}>
+                                  <div style={{ padding: '8px 16px', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--green-600, #16a34a)', borderRadius: '8px', fontWeight: 'bold' }}>
+                                    ₹{totalCollected.toLocaleString()} Collected
+                                  </div>
+                                  <div style={{ padding: '8px 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--red-600, #dc2626)', borderRadius: '8px', fontWeight: 'bold' }}>
+                                    ₹{totalOutstanding.toLocaleString()} Due
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
+                                  <thead style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                    <tr>
+                                      <th style={{ width: '120px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
+                                      <th style={{ width: '110px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Bill Code</th>
+                                      <th style={{ width: '110px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Enrollment No</th>
+                                      <th style={{ width: '140px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Student Name</th>
+                                      <th style={{ width: '100px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Total Fees</th>
+                                      <th style={{ width: '180px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Payment Details</th>
+                                      <th style={{ width: '120px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Due Date</th>
+                                      <th style={{ width: '130px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Payer & Cashier</th>
+                                      <th style={{ width: '100px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Balance</th>
+                                      <th style={{ width: '90px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
+                                      <th style={{ width: '100px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'center' }}>Action</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {rows.map(row => (
+                                      <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', verticalAlign: 'top' }}>
+                                        <td style={{ padding: '12px 8px' }}>
+                                          <input type="date" value={row.date} onChange={(e) => handleBillingRowChange(row.id, 'date', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
+                                          <div style={{ marginTop: '4px' }}>
+                                            <input type="text" placeholder="Bill Month" value={row.billMonth} onChange={(e) => handleBillingRowChange(row.id, 'billMonth', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
+                                          </div>
+                                        </td>
+                                        <td style={{ padding: '12px 8px' }}>
+                                          <input type="text" placeholder="Bill Code" value={row.billCode} onChange={(e) => handleBillingRowChange(row.id, 'billCode', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px', fontWeight: 'bold' }} />
+                                        </td>
+                                        <td style={{ padding: '12px 8px' }}>
+                                          <input type="text" placeholder="Enroll No" value={row.enrollmentNo} onChange={(e) => handleBillingRowChange(row.id, 'enrollmentNo', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
+                                        </td>
+                                        <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontSize: '12px', fontWeight: 'bold' }}>
+                                          {row.studentName || <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontWeight: 'normal' }}>Auto-fill</span>}
+                                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', fontWeight: 'normal' }}>{row.course || 'N/A'}</div>
+                                        </td>
+                                        <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontSize: '13px', fontWeight: 'bold' }}>₹{row.totalFees}</td>
+                                        <td style={{ padding: '12px 8px' }}>
+                                          <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', alignItems: 'center' }}>
+                                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                              <input type="checkbox" checked={row.splitMode} onChange={(e) => handleBillingRowChange(row.id, 'splitMode', e.target.checked)} style={{ marginRight: '4px' }}/>
+                                              Split Payment
+                                            </label>
+                                          </div>
+                                          {!row.splitMode ? (
+                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                              <input type="number" placeholder="Amt" value={row.amountPaid} onChange={(e) => handleBillingRowChange(row.id, 'amountPaid', e.target.value)} style={{ width: '60%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px', fontWeight: 'bold' }} />
+                                              <select value={row.mode || 'Cash'} onChange={(e) => handleBillingRowChange(row.id, 'mode', e.target.value)} style={{ width: '40%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', fontSize: '12px' }}>
+                                                <option value="Cash">Cash</option>
+                                                <option value="GPay">GPay</option>
+                                                <option value="Card">Card</option>
+                                              </select>
+                                            </div>
+                                          ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                              <input type="number" placeholder="Cash ₹" value={row.cashAmount} onChange={(e) => handleBillingRowChange(row.id, 'cashAmount', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px' }} />
+                                              <input type="number" placeholder="GPay ₹" value={row.upiAmount} onChange={(e) => handleBillingRowChange(row.id, 'upiAmount', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px' }} />
+                                              <input type="number" placeholder="Card ₹" value={row.cardAmount} onChange={(e) => handleBillingRowChange(row.id, 'cardAmount', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px' }} />
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td style={{ padding: '12px 8px' }}>
+                                          <input type="date" value={row.dueDate} onChange={(e) => handleBillingRowChange(row.id, 'dueDate', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
+                                        </td>
+                                        <td style={{ padding: '12px 8px' }}>
+                                          <input type="text" placeholder="Payer Name" value={row.payer} onChange={(e) => handleBillingRowChange(row.id, 'payer', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '11px', marginBottom: '4px' }} />
+                                          <input type="text" placeholder="Cashier" value={row.cashier} onChange={(e) => handleBillingRowChange(row.id, 'cashier', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '11px' }} />
+                                        </td>
+                                        <td style={{ padding: '8px 8px', color: 'var(--text-main)', fontSize: '13px', fontWeight: 'bold' }}>₹{row.balance}</td>
+                                        <td style={{ padding: '8px 8px' }}>
+                                          {row.status === 'Paid' ? (
+                                            <span style={{ display: 'inline-block', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--green-600, #16a34a)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>Paid</span>
+                                          ) : (
+                                            <span style={{ display: 'inline-block', backgroundColor: 'rgba(234, 179, 8, 0.1)', color: 'var(--yellow-600, #ca8a04)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>Pending</span>
+                                          )}
+                                        </td>
+                                        <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center' }}>
+                                            <button onClick={() => handleSaveBillingRow(row)} style={{ padding: '6px 12px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: '1px solid var(--blue-200)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', width: '100%' }} title="Save Record">
+                                              Save
+                                            </button>
+                                            {row.status === 'Paid' && (
+                                              <button 
+                                                onClick={() => {
+                                                  message.success(`Digital Bill generated for ${row.billCode || 'student'}`);
+                                                }}
+                                                style={{ padding: '6px 12px', backgroundColor: 'var(--green-50)', color: 'var(--green-600)', border: '1px solid var(--green-200)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }} title="Send Bill">
+                                                <Download size={14} /> Bill
+                                              </button>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Tab 2: Fees Not Paid / Due List */}
+                  {billingTab === 'due_list' && (
+                    <div style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                      <div style={{ padding: '20px 24px', backgroundColor: 'var(--theme-bg-premium)', borderBottom: '1px solid var(--border-color)' }}>
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>Outstanding Due List</h3>
+                        <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>Automatically tracked isolated list of students with pending balances.</p>
+                      </div>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                          <thead style={{ borderBottom: '2px solid var(--border-color)' }}>
+                            <tr>
+                              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Enrollment No</th>
+                              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Student Name</th>
+                              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Course</th>
+                              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Total Fees</th>
+                              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Amount Paid</th>
+                              <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Pending Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {studentList.filter(s => ((s.courseFee || 28000) - (s.paidFee || 0)) > 0).length === 0 ? (
+                              <tr>
+                                <td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No outstanding dues across any students! 🎉</td>
+                              </tr>
+                            ) : (
+                              studentList.filter(s => ((s.courseFee || 28000) - (s.paidFee || 0)) > 0).map(s => {
+                                const total = s.courseFee || 28000;
+                                const paid = s.paidFee || 0;
+                                const pending = total - paid;
+                                return (
+                                  <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>{s.enrollmentNo || s.id.substring(0, 6)}</td>
+                                    <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px', fontWeight: 'bold' }}>{s.name}</td>
+                                    <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{s.course || 'N/A'}</td>
+                                    <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>₹{total.toLocaleString()}</td>
+                                    <td style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '14px', fontWeight: 'bold' }}>₹{paid.toLocaleString()}</td>
+                                    <td style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '14px', fontWeight: 'bold' }}>₹{pending.toLocaleString()}</td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'settings' && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 w-full">
+                  <h3 className="text-xl font-semibold mb-6 text-slate-800 flex items-center gap-2">
+                    <Settings className="w-6 h-6 text-indigo-500" /> Organization Settings
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Logo Upload Widget */}
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col items-center justify-between" style={{ maxWidth: '300px' }}>
+                      <div className="text-center w-full">
+                        <h4 className="text-lg font-medium text-slate-700 mb-2">Organization Logo</h4>
+                        <p className="text-xs text-slate-500 mb-6">Synchronized across all dashboards</p>
+                      </div>
+                      
+                      <Upload
+                        accept="image/*"
+                        showUploadList={false}
+                        beforeUpload={() => false}
+                        onChange={handleLogoUpload}
+                        disabled={logoUploading}
+                        className="w-full flex justify-center mb-4"
+                      >
+                        <div className="w-40 h-40 rounded-xl border-2 border-dashed border-indigo-300 hover:border-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center overflow-hidden cursor-pointer shadow-sm relative group bg-white">
+                          {logoUrl ? (
+                            <>
+                              <img src={logoUrl} alt="Org Logo" className="w-full h-full object-contain p-2" />
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ImageIcon className="w-8 h-8 text-white" />
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-indigo-600">
+                              <UploadCloud className="w-8 h-8 mb-2" />
+                              <span className="text-xs font-semibold uppercase tracking-wider">Upload</span>
+                            </div>
+                          )}
+                          {logoUploading && (
+                            <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
+                              <div className="w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          )}
+                        </div>
+                      </Upload>
+                      {logoUrl && (
+                        <Button 
+                          type="primary" 
+                          danger 
+                          className="w-full mt-4" 
+                          onClick={async () => {
+                            setLogoUploading(true);
+                            try {
+                              await updateOrganizationLogo(user.organizationId, null);
+                              setLogoUrl(null);
+                              localStorage.removeItem('org_logo');
+                              message.success('Organization logo removed successfully!');
+                            } catch (error) {
+                              message.error(error.message);
+                            } finally {
+                              setLogoUploading(false);
+                            }
+                          }}
+                          loading={logoUploading}
+                        >
+                          Remove Logo
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Admin Profile Details Placeholder */}
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-lg font-medium text-slate-700 mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" /> Admin Profile</h4>
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Name</p>
+                            <p className="text-slate-800 font-medium">{user?.name || 'Administrator'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Email Address</p>
+                            <p className="text-slate-800 font-medium">{user?.email}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <Button className="mt-6 border-slate-300 text-slate-600 w-full" disabled>Edit Profile (Coming Soon)</Button>
+                    </div>
+
+                    {/* Security & Password Placeholder */}
+                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between">
+                      <div>
+                        <h4 className="text-lg font-medium text-slate-700 mb-4 flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-red-500" /> Security</h4>
+                        <p className="text-sm text-slate-500 mb-4">Manage your password and security preferences. Ensure your account uses a strong, secure password.</p>
+                      </div>
+                      <Button className="border-slate-300 text-slate-600 w-full" disabled>Change Password (Coming Soon)</Button>
+                    </div>
                   </div>
                 </div>
               )}
+
+              {activeTab === 'journey' && (
+                <div style={{ backgroundColor: 'var(--panel-solid-white)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                     <h3 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: 'var(--text-main)' }}>Student Journey Hub</h3>
+                     <div style={{ display: 'flex', gap: '12px' }}>
+                       <button 
+                         onClick={() => {
+                           const filteredJourneyStudents = studentList.filter(s => {
+                             if (!journeySearchQuery) return true;
+                             const q = journeySearchQuery.toLowerCase();
+                             return (s.name || '').toLowerCase().includes(q) || 
+                                    (s.enrollmentNo || '').toLowerCase().includes(q) || 
+                                    (s.phoneNumber || '').includes(q) ||
+                                    (s.batch || '').toLowerCase().includes(q);
+                           });
+                           handleBulkSingleCSV(filteredJourneyStudents);
+                         }}
+                         style={{ padding: '8px 16px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'}
+                       >
+                         <Download className="w-4 h-4" style={{ color: 'var(--green-600, #16a34a)' }} /> Download All (Single CSV)
+                       </button>
+                       <button 
+                         onClick={() => {
+                           const filteredJourneyStudents = studentList.filter(s => {
+                             if (!journeySearchQuery) return true;
+                             const q = journeySearchQuery.toLowerCase();
+                             return (s.name || '').toLowerCase().includes(q) || 
+                                    (s.enrollmentNo || '').toLowerCase().includes(q) || 
+                                    (s.phoneNumber || '').includes(q) ||
+                                    (s.batch || '').toLowerCase().includes(q);
+                           });
+                           handleBulkSeparateCSV(filteredJourneyStudents);
+                         }}
+                         style={{ padding: '8px 16px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'}
+                       >
+                         <Download className="w-4 h-4" style={{ color: 'var(--blue-600, #2563eb)' }} /> Download All Profiles (Separate CSVs)
+                       </button>
+                     </div>
+                   </div>
+                   
+                    <div className="search-bar-wrapper" style={{ marginBottom: '32px', maxWidth: '600px' }}>
+                      <Search className="search-bar-icon" />
+                      <input 
+                        className="search-bar-input"
+                        type="text" 
+                        placeholder="Search by Name, ID, Mobile, or Batch..." 
+                        value={journeySearchQuery}
+                        onChange={(e) => {
+                          setJourneySearchQuery(e.target.value);
+                          if (!e.target.value) setSelectedJourneyStudent(null);
+                        }}
+                        style={{ width: '100%', paddingTop: '14px', paddingRight: '14px', paddingBottom: '14px', paddingLeft: '40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+                      />
+                    </div>
+                      
+                    {/* Default Roster List */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {studentList.filter(s => {
+                        const q = journeySearchQuery.toLowerCase();
+                        return (s.name || '').toLowerCase().includes(q) || 
+                               (s.enrollmentNo || '').toLowerCase().includes(q) || 
+                               (s.phoneNumber || '').includes(q) ||
+                               (s.batch || '').toLowerCase().includes(q);
+                      }).map(student => (
+                        <div 
+                          key={student.id} 
+                          style={{ padding: '12px 24px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.2s ease-in-out' }}
+                          onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--accent-royal-purple)'; }}
+                          onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--card-bg)'; e.currentTarget.style.borderColor = 'var(--border-color)'; }}
+                          onClick={() => {
+                            setSelectedJourneyStudent(student);
+                            setIsJourneyProfileModalVisible(true);
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flex: 1, flexWrap: 'wrap' }}>
+                            {student.documents?.profilePhotoUrl || student.photoUrl ? (
+                              <img src={student.documents?.profilePhotoUrl || student.photoUrl} alt="Avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                            ) : (
+                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--accent-royal-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px', border: '1px solid var(--border-color)' }}>
+                                {student.name?.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
+                              <div style={{ fontWeight: 'bold', fontSize: '15px', color: 'var(--text-main)' }}>{student.name}</div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>ID: {student.enrollmentNo || 'N/A'}</div>
+                            </div>
+                            <div style={{ flex: '1 1 150px', minWidth: '100px' }}>
+                              <div style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Course</div>
+                              <div style={{ fontSize: '14px', color: 'var(--text-main)' }}>{student.course || 'N/A'}</div>
+                            </div>
+                            <div style={{ flex: '1 1 150px', minWidth: '100px' }}>
+                              <div style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Batch Year</div>
+                              <div style={{ fontSize: '14px', color: 'var(--text-main)' }}>{student.batch || 'N/A'}</div>
+                            </div>
+                          </div>
+                          
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedJourneyStudent(student);
+                              setIsJourneyProfileModalVisible(true);
+                            }}
+                            style={{ padding: '8px 16px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--accent-royal-purple)', border: '1px solid var(--accent-royal-purple)', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '16px' }}
+                          >
+                            View Full Profile
+                          </button>
+                        </div>
+                      ))}
+                      {studentList.filter(s => {
+                        const q = journeySearchQuery.toLowerCase();
+                        return (s.name || '').toLowerCase().includes(q) || 
+                               (s.enrollmentNo || '').toLowerCase().includes(q) || 
+                               (s.phoneNumber || '').includes(q) ||
+                               (s.batch || '').toLowerCase().includes(q);
+                      }).length === 0 && (
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>No students found matching your criteria.</div>
+                      )}
+                    </div>
+                  </div>
+              )}
+
+      {/* Journey Profile Modal Overlay */}
+      {isJourneyProfileModalVisible && selectedJourneyStudent && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '800px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '16px', padding: '0', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+            
+            {/* Header / Sticky Top */}
+            <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--card-bg)', padding: '24px 32px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderRadius: '16px 16px 0 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                {selectedJourneyStudent.documents?.profilePhotoUrl || selectedJourneyStudent.photoUrl ? (
+                  <img src={selectedJourneyStudent.documents?.profilePhotoUrl || selectedJourneyStudent.photoUrl} alt="Avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '4px solid var(--border-color)' }} />
+                ) : (
+                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--accent-royal-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '32px', border: '2px solid var(--border-color)' }}>
+                    {selectedJourneyStudent.name?.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <h2 style={{ margin: '0 0 4px 0', fontSize: '28px', fontWeight: 'bold', color: 'var(--text-main)' }}>{selectedJourneyStudent.name}</h2>
+                  <div style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>Enrollment ID: {selectedJourneyStudent.enrollmentNo || 'N/A'} | Course: {selectedJourneyStudent.course || 'N/A'}</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setIsJourneyProfileModalVisible(false); setSelectedJourneyStudent(null); }} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: 'background-color 0.2s' }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <X className="w-8 h-8" />
+              </button>
             </div>
-          </Content>
-        </Layout>
-      </Layout>
-      
-      <Modal
-        title={`Edit ${editingUser?.role === 'staff' ? 'Faculty' : 'Student'} Profile`}
-        open={isEditModalVisible}
-        onCancel={() => setIsEditModalVisible(false)}
-        footer={null}
-        destroyOnClose
-      >
-        <Form form={editForm} layout="vertical" onFinish={handleEditSubmit}>
-          <Form.Item name="name" label="Full Name" rules={[{ required: true }]}>
-            <Input placeholder="Enter name" />
-          </Form.Item>
-          <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
-            <Input placeholder="Enter email" />
-          </Form.Item>
-          <Form.Item name="phoneNumber" label="Phone Number" rules={[{ required: true }]}>
-            <Input placeholder="Enter phone number" />
-          </Form.Item>
-          <Form.Item className="mb-0 text-right">
-            <Button onClick={() => setIsEditModalVisible(false)} className="mr-2">Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={editLoading}>Save Changes</Button>
-          </Form.Item>
-        </Form>
-      </Modal>
-    </Layout>
+
+            {/* Scrollable Content */}
+            <div style={{ padding: '32px' }}>
+              <div style={{ position: 'relative', paddingLeft: '40px' }}>
+                 {/* Timeline Line */}
+                 <div style={{ position: 'absolute', top: 0, bottom: 0, left: '15px', width: '2px', backgroundColor: 'var(--border-color)' }}></div>
+                 
+                 {/* Node: Joining & Leaving Dates */}
+                 <div style={{ position: 'relative', marginBottom: '32px' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--green-500, #22c55e)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Enrollment Timeline</div>
+                   <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                     <div style={{ flex: 1, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                       <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Date of Joining</div>
+                       {selectedJourneyStudent.dateOfJoining || (selectedJourneyStudent.createdAt ? new Date(selectedJourneyStudent.createdAt.seconds * 1000).toLocaleDateString() : 'Timestamp Not Available')}
+                       <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: '8px' }}>Account Initialized</div>
+                     </div>
+                     
+                     {(selectedJourneyStudent.currentStatus === 'Completed' || selectedJourneyStudent.currentStatus === 'Drop-out') && (
+                       <div style={{ flex: 1, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                         <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Date of Leaving</div>
+                         {selectedJourneyStudent.dateOfLeaving ? new Date(selectedJourneyStudent.dateOfLeaving).toLocaleDateString() : 'Not Recorded'}
+                         <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: '8px' }}>Status: {selectedJourneyStudent.currentStatus}</div>
+                       </div>
+                     )}
+                   </div>
+                 </div>
+                 
+                 {/* Personal Metadata Node */}
+                 <div style={{ position: 'relative', marginBottom: '32px' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--blue-400, #60a5fa)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Personal Metadata</div>
+                   <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                       <div><span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', display: 'block', fontSize: '12px', textTransform: 'uppercase' }}>Gmail</span> {selectedJourneyStudent.email || 'N/A'}</div>
+                       <div><span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', display: 'block', fontSize: '12px', textTransform: 'uppercase' }}>Phone Number</span> {selectedJourneyStudent.phoneNumber || 'N/A'}</div>
+                       <div><span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', display: 'block', fontSize: '12px', textTransform: 'uppercase' }}>Parent/Guardian Mobile</span> {selectedJourneyStudent.parentPhone || 'N/A'}</div>
+                       <div><span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', display: 'block', fontSize: '12px', textTransform: 'uppercase' }}>Age</span> {selectedJourneyStudent.age || 'N/A'}</div>
+                       <div><span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', display: 'block', fontSize: '12px', textTransform: 'uppercase' }}>Batch</span> {selectedJourneyStudent.batch || 'N/A'}</div>
+                       <div><span style={{ fontWeight: 'bold', color: 'var(--text-secondary)', display: 'block', fontSize: '12px', textTransform: 'uppercase' }}>Identity Token</span> [Aadhaar Redacted]</div>
+                     </div>
+                   </div>
+                 </div>
+
+                 {/* Attendance Telemetry Node */}
+                 <div style={{ position: 'relative', marginBottom: '32px' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--yellow-500, #eab308)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Attendance Telemetry</div>
+                   <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                     {(() => {
+                       let present = 0, absent = 0;
+                       const unique = [];
+                       if (selectedJourneyStudent && attendanceHistoryList) {
+                         const map = new Map();
+                         attendanceHistoryList.forEach(log => {
+                           if (log.isFinal === false) return; // Skip drafts
+                           const rec = log.records?.find(r => r.studentName === selectedJourneyStudent.name);
+                           if (rec) {
+                             const key = `${log.date}_${log.batchName}_${log.slot}`;
+                             if (!map.has(key)) {
+                               map.set(key, { date: log.date, batch: log.batchName, slot: log.slot, status: rec.status, faculty: log.facultyName });
+                             }
+                           }
+                         });
+                         map.forEach(v => {
+                           unique.push(v);
+                           if (v.status === 'P') present++;
+                           if (v.status === 'A') absent++;
+                         });
+                         unique.sort((a,b) => new Date(b.date) - new Date(a.date));
+                       }
+                       return (
+                         <>
+                           <div style={{ display: 'flex', gap: '32px', marginBottom: unique.length > 0 ? '24px' : '0' }}>
+                             <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold' }}>Classes Attended (Present)</span>
+                                <span style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--green-600, #16a34a)' }}>{present}</span>
+                             </div>
+                             <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold' }}>Classes Skipped (Absent)</span>
+                                <span style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--red-600, #dc2626)' }}>{absent}</span>
+                             </div>
+                           </div>
+                           {unique.length > 0 && (
+                             <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                               <button 
+                                 onClick={() => setIsJourneyAttendanceModalVisible(true)}
+                                 style={{ width: '100%', padding: '12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-main)' }}
+                               >
+                                 View Details
+                               </button>
+                             </div>
+                           )}
+                         </>
+                       );
+                     })()}
+                   </div>
+                 </div>
+
+                 {/* Academic Performance Node */}
+                 <div style={{ position: 'relative', marginBottom: '32px' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--indigo-500, #6366f1)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Academic Performance</div>
+                   <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                     {selectedJourneyStudent.examHistory && selectedJourneyStudent.examHistory.length > 0 ? (
+                       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                         <thead>
+                           <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                             <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Exam Name</th>
+                             <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Marks</th>
+                             <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Grade</th>
+                           </tr>
+                         </thead>
+                         <tbody>
+                           {selectedJourneyStudent.examHistory.map((exam, idx) => (
+                             <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                               <td style={{ padding: '12px 0', fontWeight: 'bold' }}>{exam.examName}</td>
+                               <td style={{ padding: '12px 0' }}>{exam.marks}</td>
+                               <td style={{ padding: '12px 0' }}>
+                                 <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>{exam.grade}</span>
+                               </td>
+                             </tr>
+                           ))}
+                         </tbody>
+                       </table>
+                     ) : (
+                       <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No academic records found.</span>
+                     )}
+                   </div>
+                 </div>
+                 
+                 {/* Detailed Fee Ledger Node */}
+                 <div style={{ position: 'relative', marginBottom: '32px' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--teal-500, #14b8a6)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Detailed Fee Ledger</div>
+                   <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                     {selectedJourneyStudent.feeHistory && selectedJourneyStudent.feeHistory.length > 0 ? (
+                       <div>
+                         <button 
+                           onClick={() => setIsJourneyFeeModalVisible(true)}
+                           style={{ width: '100%', padding: '12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-main)' }}
+                         >
+                           View Details
+                         </button>
+                       </div>
+                     ) : (
+                       <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No fee transactions recorded.</span>
+                     )}
+                   </div>
+                 </div>
+                 
+                 {/* Node: Course Enrollment */}
+                 <div style={{ position: 'relative', marginBottom: '32px' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--blue-500, #3b82f6)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Course Registration</div>
+                   <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                     {selectedJourneyStudent.course || 'No Course Assigned'}
+                     <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: '8px' }}>Course Fee: ₹{selectedJourneyStudent.courseFee || 28000} | Paid: ₹{selectedJourneyStudent.paidFee || 0}</div>
+                   </div>
+                 </div>
+
+                 {/* Node: Current Status */}
+                 <div style={{ position: 'relative' }}>
+                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--accent-royal-purple)', border: '4px solid var(--card-bg)' }}></div>
+                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Current Status</div>
+                   <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                     {selectedJourneyStudent.currentStatus || 'Active'}
+                     {selectedJourneyStudent.statusHistory && selectedJourneyStudent.statusHistory.length > 0 && (
+                       <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                         {selectedJourneyStudent.statusHistory.map((h, i) => (
+                           <div key={i} style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                             <strong style={{ color: 'var(--text-main)' }}>{h.status}</strong> - {h.reason} ({new Date(h.date).toLocaleDateString()})
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </div>
+                 </div>
+
+                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '40px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
+                   <button 
+                     onClick={() => handleSingleProfileDownload(selectedJourneyStudent)}
+                     style={{ padding: '12px 24px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '2px solid var(--accent-royal-purple, #6366f1)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}
+                     onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-royal-purple, #6366f1)'; e.currentTarget.style.color = '#fff'; }}
+                     onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'; e.currentTarget.style.color = 'var(--text-main)'; }}
+                   >
+                     <Download className="w-5 h-5" /> Download Student Report
+                   </button>
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'admission' && (
+        <div className="native-module-container">
+          {/* Analytics Section */}
+          <div className="native-stats-grid">
+            <div className="native-stat-card" style={{ position: 'relative' }}>
+              <div className="native-stat-value">
+                {studentList.filter(s => {
+                  const d = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                  return d && d.startsWith(new Date().toISOString().split('T')[0]);
+                }).length}
+              </div>
+              <div className="native-stat-label">Today's Admissions</div>
+              <button 
+                onClick={() => { 
+                  const d = new Date();
+                  setDrillDownPath([String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), `Week ${getISOWeekNumber(d)}`, String(d.getDate()).padStart(2, '0')]); 
+                  setIsAdmissionSummaryModalVisible(true); 
+                }}
+                style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >View</button>
+            </div>
+            <div className="native-stat-card" style={{ position: 'relative' }}>
+              <div className="native-stat-value">
+                {studentList.filter(s => {
+                  const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
+                  return d && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
+                }).length}
+              </div>
+              <div className="native-stat-label">This Month</div>
+              <button 
+                onClick={() => { 
+                  const d = new Date();
+                  setDrillDownPath([String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')]); 
+                  setIsAdmissionSummaryModalVisible(true); 
+                }}
+                style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >View</button>
+            </div>
+            <div className="native-stat-card" style={{ position: 'relative' }}>
+              <div className="native-stat-value">
+                {studentList.filter(s => {
+                  const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
+                  return d && d.getFullYear() === new Date().getFullYear();
+                }).length}
+              </div>
+              <div className="native-stat-label">This Year</div>
+              <button 
+                onClick={() => { 
+                  const d = new Date();
+                  setDrillDownPath([String(d.getFullYear())]); 
+                  setIsAdmissionSummaryModalVisible(true); 
+                }}
+                style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+              >View</button>
+            </div>
+          </div>
+
+          {/* Form Section */}
+          <div className="native-form-card">
+            <h2 className="native-form-title">New Student Admission</h2>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setLoading(true);
+              try {
+                const formData = new FormData(e.target);
+                const values = Object.fromEntries(formData.entries());
+                
+                const studentData = {
+                  name: values.name,
+                  email: values.email || '',
+                  organizationAccessId: user.organizationAccessId,
+                  phoneNumber: values.phoneNumber,
+                  enrollmentNo: values.enrollmentNo,
+                  course: values.course,
+                  batch: values.batch,
+                  gender: values.gender,
+                  dob: values.dob || '',
+                  dateOfJoining: values.dateOfJoining,
+                  courseFee: Number(values.courseFee) || 0,
+                  parentPhone: values.parentPhone || '',
+                  admissionMonth: values.admissionMonth || '',
+                  remarks: values.remarks || ''
+                };
+                
+                await createStudent(user.organizationId, user.organizationName, studentData);
+                
+                message.success('Admission created successfully!');
+                e.target.reset();
+                fetchStaffAndStudents();
+              } catch(err) {
+                message.error(err.message);
+              } finally {
+                setLoading(false);
+              }
+            }}>
+              <div className="native-form-grid">
+                {/* Row 1: Student Identity */}
+                <div className="native-form-group">
+                  <label className="native-form-label">Enrollment Number *</label>
+                  <input type="text" name="enrollmentNo" className="native-form-input" required placeholder="e.g. ENR-2024-001" />
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Student Name *</label>
+                  <input type="text" name="name" className="native-form-input" required placeholder="Full Name" />
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Date of Birth</label>
+                  <input type="date" name="dob" className="native-form-input" />
+                </div>
+
+                {/* Row 2: Personal/Contact */}
+                <div className="native-form-group">
+                  <label className="native-form-label">Gender *</label>
+                  <select name="gender" className="native-form-select" required>
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Mobile Number *</label>
+                  <input type="text" name="phoneNumber" className="native-form-input" required placeholder="+91..." />
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Email Address</label>
+                  <input type="email" name="email" className="native-form-input" placeholder="student@example.com" />
+                </div>
+
+                {/* Row 3: Academic/Course */}
+                <div className="native-form-group">
+                  <label className="native-form-label">Course Selection *</label>
+                  <select name="course" className="native-form-select" required>
+                    <option value="">Select Course</option>
+                    {courseList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Batch *</label>
+                  <input type="text" name="batch" className="native-form-input" required placeholder="e.g. 2025-2028 or Morning Batch" />
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Course Fee *</label>
+                  <input type="number" name="courseFee" className="native-form-input" required placeholder="e.g. 25000" />
+                </div>
+
+                {/* Row 4: Admission Info */}
+                <div className="native-form-group">
+                  <label className="native-form-label">Join Date *</label>
+                  <input type="date" name="dateOfJoining" className="native-form-input" required defaultValue={new Date().toISOString().split('T')[0]} />
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Admission Month</label>
+                  <input type="month" name="admissionMonth" className="native-form-input" defaultValue={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`} />
+                </div>
+                <div className="native-form-group">
+                  <label className="native-form-label">Parent Mobile Number</label>
+                  <input type="text" name="parentPhone" className="native-form-input" placeholder="+91..." />
+                </div>
+
+                {/* Row 5: Extra */}
+                <div className="native-form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="native-form-label">Remarks</label>
+                  <textarea name="remarks" className="native-form-textarea" rows="3" placeholder="Any special notes..."></textarea>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="submit" className="native-form-submit" disabled={loading}>
+                  {loading ? 'Processing...' : 'Complete Admission'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'reports' && (
+        <div className="native-module-container">
+          <h2 className="native-form-title">Advanced Reporting Module</h2>
+          <div className="native-tabs-nav">
+            <button className={`native-tab-btn ${activeReportTab === 'admission' ? 'active' : ''}`} onClick={() => setActiveReportTab('admission')}>Admission Reports</button>
+            <button className={`native-tab-btn ${activeReportTab === 'defaulters' ? 'active' : ''}`} onClick={() => setActiveReportTab('defaulters')}>Fee Defaulters</button>
+            <button className={`native-tab-btn ${activeReportTab === 'attendance' ? 'active' : ''}`} onClick={() => setActiveReportTab('attendance')}>Attendance Reports</button>
+            <button className={`native-tab-btn ${activeReportTab === 'marks' ? 'active' : ''}`} onClick={() => setActiveReportTab('marks')}>Performance & Marks</button>
+          </div>
+
+          <div className="native-form-card">
+            {activeReportTab === 'admission' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {(() => {
+                  const now = new Date();
+                  const startOfWeek = new Date(now);
+                  startOfWeek.setDate(now.getDate() - now.getDay());
+                  startOfWeek.setHours(0, 0, 0, 0);
+
+                  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                  const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+                  let weekCount = 0;
+                  let monthCount = 0;
+                  let yearCount = 0;
+
+                  studentList.forEach(s => {
+                    const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
+                    if (d) {
+                      if (d >= startOfWeek) weekCount++;
+                      if (d >= startOfMonth) monthCount++;
+                      if (d >= startOfYear) yearCount++;
+                    }
+                  });
+
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                      <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid #f1f5f9', position: 'relative' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', color: '#64748b' }}>This Week</div>
+                        <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1e293b' }}>{weekCount}</div>
+                        <button 
+                          onClick={() => { 
+                            const d = new Date();
+                            setDrillDownPath([String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), `Week ${getISOWeekNumber(d)}`]); 
+                            setIsAdmissionSummaryModalVisible(true); 
+                          }}
+                          style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                        >View</button>
+                      </div>
+                      <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid #f1f5f9', position: 'relative' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', color: '#64748b' }}>This Month</div>
+                        <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1e293b' }}>{monthCount}</div>
+                        <button 
+                          onClick={() => { 
+                            const d = new Date();
+                            setDrillDownPath([String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')]); 
+                            setIsAdmissionSummaryModalVisible(true); 
+                          }}
+                          style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                        >View</button>
+                      </div>
+                      <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid #f1f5f9', position: 'relative' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase', color: '#64748b' }}>This Year</div>
+                        <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1e293b' }}>{yearCount}</div>
+                        <button 
+                          onClick={() => { 
+                            const d = new Date();
+                            setDrillDownPath([String(d.getFullYear())]); 
+                            setIsAdmissionSummaryModalVisible(true); 
+                          }}
+                          style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                        >View</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <label style={{ fontWeight: 'bold', color: '#475569' }}>Filter by Course:</label>
+                  <select 
+                    value={admissionReportCourseFilter} 
+                    onChange={(e) => setAdmissionReportCourseFilter(e.target.value)}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: '#fff', fontSize: '14px', minWidth: '200px', cursor: 'pointer' }}
+                  >
+                    <option value="All">All Courses</option>
+                    {courseList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="native-table-wrapper">
+                  <table className="native-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Student Name</th>
+                        <th>Enrollment No</th>
+                        <th>Course</th>
+                        <th>Mobile</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {studentList
+                        .filter(s => (s.dateOfJoining || s.createdAt) && (admissionReportCourseFilter === 'All' || s.course === admissionReportCourseFilter))
+                        .sort((a,b) => {
+                          const d1 = new Date(b.dateOfJoining || (b.createdAt ? b.createdAt.seconds * 1000 : 0));
+                          const d2 = new Date(a.dateOfJoining || (a.createdAt ? a.createdAt.seconds * 1000 : 0));
+                          return d1 - d2;
+                        })
+                        .slice(0, 100)
+                        .map(s => {
+                          const d = s.dateOfJoining ? new Date(s.dateOfJoining) : new Date(s.createdAt.seconds * 1000);
+                          return (
+                            <tr key={s.id}>
+                              <td>{d.toLocaleDateString()}</td>
+                              <td>{s.name}</td>
+                              <td>{s.enrollmentNo || 'N/A'}</td>
+                              <td>{s.course || 'N/A'}</td>
+                              <td>{s.phoneNumber || 'N/A'}</td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {activeReportTab === 'defaulters' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <label style={{ fontWeight: 'bold', color: '#475569' }}>Filter by Course:</label>
+                  <select 
+                    value={admissionReportCourseFilter} 
+                    onChange={(e) => setAdmissionReportCourseFilter(e.target.value)}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: '#fff', fontSize: '14px', minWidth: '200px', cursor: 'pointer' }}
+                  >
+                    <option value="All">All Courses</option>
+                    {courseList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="native-table-wrapper">
+                  <table className="native-table">
+                    <thead>
+                      <tr>
+                        <th>Student Name</th>
+                        <th>Course</th>
+                        <th>Total Fee</th>
+                        <th>Paid Amount</th>
+                        <th>Pending Amount</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {studentList.filter(s => {
+                         const courseFee = Number(s.courseFee) || 28000;
+                         const paid = s.receipts?.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0) || Number(s.paidFee) || 0;
+                         const isDefaulter = (courseFee - paid) > 0;
+                         const matchesCourse = admissionReportCourseFilter === 'All' || s.course === admissionReportCourseFilter;
+                         return isDefaulter && matchesCourse;
+                      }).map(s => {
+                         const courseFee = Number(s.courseFee) || 28000;
+                         const paid = s.receipts?.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0) || Number(s.paidFee) || 0;
+                         const pending = courseFee - paid;
+                         return (
+                          <tr key={s.id}>
+                            <td>{s.name}</td>
+                            <td>{s.course || 'N/A'}</td>
+                            <td>₹{courseFee}</td>
+                            <td style={{ color: 'var(--green-600)' }}>₹{paid}</td>
+                            <td style={{ color: 'var(--red-600)', fontWeight: 'bold' }}>₹{pending}</td>
+                            <td><button className="native-tab-btn" style={{ border: '1px solid var(--border-color)' }}>Send Reminder</button></td>
+                          </tr>
+                         );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeReportTab === 'attendance' && (() => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                const filteredAttendance = attendanceHistoryList.filter(record => {
+                  const matchTab = attendanceReportTab === 'daily' ? record.date === todayStr : record.date !== todayStr;
+                  const matchBatch = attendanceBatchFilter === 'All' ? true : record.batchName === attendanceBatchFilter;
+                  const matchFaculty = attendanceFacultyFilter === 'All' ? true : record.facultyName === attendanceFacultyFilter;
+                  return matchTab && matchBatch && matchFaculty;
+                });
+                
+                return (
+                  <div style={{ backgroundColor: 'var(--panel-solid-white)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px', width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                      <div style={{ display: 'flex', gap: '16px', borderBottom: '2px solid var(--border-color)' }}>
+                        <button 
+                          onClick={() => setAttendanceReportTab('daily')}
+                          style={{ padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: attendanceReportTab === 'daily' ? '2px solid var(--blue-500, #3b82f6)' : '2px solid transparent', color: attendanceReportTab === 'daily' ? 'var(--blue-500, #3b82f6)' : 'var(--text-secondary)', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginBottom: '-2px', transition: 'all 0.2s' }}
+                        >Daily Attendance</button>
+                        <button 
+                          onClick={() => setAttendanceReportTab('history')}
+                          style={{ padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: attendanceReportTab === 'history' ? '2px solid var(--blue-500, #3b82f6)' : '2px solid transparent', color: attendanceReportTab === 'history' ? 'var(--blue-500, #3b82f6)' : 'var(--text-secondary)', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginBottom: '-2px', transition: 'all 0.2s' }}
+                        >Attendance History</button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '16px' }}>
+                        <select 
+                          value={attendanceBatchFilter}
+                          onChange={(e) => setAttendanceBatchFilter(e.target.value)}
+                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', fontSize: '14px', outline: 'none', cursor: 'pointer', minWidth: '160px' }}
+                        >
+                          <option value="All">All Batches</option>
+                          {courseList.map(c => <option key={c.id} value={c.name}>{(c.name || "").replace(" (Full Course)", "")}</option>)}
+                        </select>
+                        
+                        <select 
+                          value={attendanceFacultyFilter}
+                          onChange={(e) => setAttendanceFacultyFilter(e.target.value)}
+                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', fontSize: '14px', outline: 'none', cursor: 'pointer', minWidth: '160px' }}
+                        >
+                          <option value="All">All Faculty</option>
+                          {staffList.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="global-responsive-scroll-wrapper" style={{ overflowX: 'auto', backgroundColor: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead style={{ backgroundColor: 'var(--theme-bg-premium)', borderBottom: '2px solid var(--border-color)' }}>
+                          <tr>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Date</th>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Batch Name</th>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Faculty</th>
+                            <th style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Total Students</th>
+                            <th style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '12px', textTransform: 'uppercase' }}>Present</th>
+                            <th style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '12px', textTransform: 'uppercase' }}>Absent</th>
+                            <th style={{ padding: '16px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredAttendance.length > 0 ? filteredAttendance.map(record => {
+                            const totalPresent = record.totalPresentees !== undefined ? record.totalPresentees : (record.records?.filter(rec => rec.status === 'P').length || 0);
+                            const totalAbsent = record.totalAbsentees !== undefined ? record.totalAbsentees : (record.records?.filter(rec => rec.status === 'A').length || 0);
+                            return (
+                                <tr key={`row-${record.id}`} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--card-bg)', transition: 'background-color 0.2s' }}>
+                                  <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px', fontWeight: '500' }}>{new Date(record.date).toLocaleDateString()}</td>
+                                  <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>{record.batchName}</td>
+                                  <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{record.facultyName}</td>
+                                  <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{record.records?.length || 0}</td>
+                                  <td style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '14px', fontWeight: 'bold' }}>{totalPresent}</td>
+                                  <td style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '14px', fontWeight: 'bold' }}>{totalAbsent}</td>
+                                  <td style={{ padding: '16px', textAlign: 'right' }}>
+                                    <button 
+                                      onClick={() => setSelectedAttendanceReport(record)}
+                                      style={{ padding: '8px 16px', backgroundColor: 'var(--blue-500, #3b82f6)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                                    >
+                                      View Details
+                                    </button>
+                                  </td>
+                                </tr>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan="7" style={{ padding: '48px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                                No attendance records found matching your filters.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {selectedAttendanceReport && (
+                      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                        <div style={{ backgroundColor: 'var(--panel-solid-white)', width: '90%', maxWidth: '800px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+                          
+                          <div style={{ padding: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h4 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                              Detailed Summary - {selectedAttendanceReport.batchName} ({new Date(selectedAttendanceReport.date).toLocaleDateString()})
+                            </h4>
+                            <button 
+                              onClick={() => setSelectedAttendanceReport(null)}
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
+                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <X className="w-6 h-6" style={{ color: 'var(--text-secondary)' }} />
+                            </button>
+                          </div>
+                          
+                          <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px', alignContent: 'start' }}>
+                            {selectedAttendanceReport.records && Array.isArray(selectedAttendanceReport.records) ? selectedAttendanceReport.records.map((r, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--card-bg)', padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px' }}>
+                                <span style={{ fontWeight: '600', color: 'var(--text-main)', fontSize: '15px' }}>{r.studentName}</span>
+                                {r.status === 'P' ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--green-600, #16a34a)', backgroundColor: 'rgba(22,163,74,0.1)', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold' }}>Present</span>
+                                ) : (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--red-600, #dc2626)', backgroundColor: 'rgba(220,38,38,0.1)', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold' }}>Absent</span>
+                                )}
+                              </div>
+                            )) : <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>No records found for this batch.</p>}
+                          </div>
+                          
+                          <div style={{ padding: '24px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', borderRadius: '0 0 16px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--green-500, #22c55e)' }}></div>
+                                Total Present: {selectedAttendanceReport.totalPresentees !== undefined ? selectedAttendanceReport.totalPresentees : (selectedAttendanceReport.records?.filter(rec => rec.status === 'P').length || 0)}
+                              </div>
+                              <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)' }}></div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--red-500, #ef4444)' }}></div>
+                                Total Absent: {selectedAttendanceReport.totalAbsentees !== undefined ? selectedAttendanceReport.totalAbsentees : (selectedAttendanceReport.records?.filter(rec => rec.status === 'A').length || 0)}
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => downloadAttendanceCSV(selectedAttendanceReport)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', backgroundColor: 'var(--blue-600, #2563eb)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}
+                            >
+                              <Download className="w-4 h-4" /> Download Report
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+            {activeReportTab === 'staff_attendance' && (
+              <div className="native-table-wrapper">
+                <table className="native-table">
+                  <thead>
+                    <tr>
+                      <th>Staff Name</th>
+                      <th>Designation</th>
+                      <th>Status (Today)</th>
+                      <th>Login Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffList.map((staff, i) => (
+                      <tr key={staff.id}>
+                        <td>{staff.name}</td>
+                        <td>Faculty</td>
+                        <td>
+                          <span style={{ 
+                            padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold',
+                            backgroundColor: i % 3 === 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)', 
+                            color: i % 3 === 0 ? 'var(--red-500)' : 'var(--green-500)' 
+                          }}>
+                            {i % 3 === 0 ? 'Absent' : 'Present'}
+                          </span>
+                        </td>
+                        <td>{i % 3 === 0 ? '-' : `09:${10 + i} AM`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {activeReportTab === 'marks' && (
+              <div className="native-table-wrapper">
+                <table className="native-table">
+                  <thead>
+                    <tr>
+                      <th>Student Name</th>
+                      <th>Recent Exam</th>
+                      <th>Marks Scored</th>
+                      <th>Grade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {studentList.filter(s => s.examHistory && s.examHistory.length > 0).map(s => {
+                      const latest = s.examHistory[s.examHistory.length - 1];
+                      return (
+                        <tr key={s.id}>
+                          <td>{s.name}</td>
+                          <td>{latest.examName}</td>
+                          <td>{latest.marks}</td>
+                          <td>
+                            <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
+                              {latest.grade}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {studentList.filter(s => s.examHistory && s.examHistory.length > 0).length === 0 && (
+                      <tr><td colSpan="4" style={{ textAlign: 'center' }}>No exam records found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'marks' && (
+        <div className="native-module-container">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <h2 className="native-form-title" style={{ margin: 0 }}>Marks Management</h2>
+            <button 
+              onClick={() => {
+                const flatMarks = studentList.filter(s => {
+                  if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
+                  if (marksSearchText) {
+                    const q = marksSearchText.toLowerCase();
+                    const sName = s.name ? String(s.name).toLowerCase() : '';
+                    const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
+                    return (sName.includes(q) || sEnrollment.includes(q));
+                  }
+                  return true;
+                }).flatMap(s => {
+                  const history = s.examHistory || [];
+                  if (history.length === 0) {
+                    return [{
+                      'Student Name': s.name || 'N/A',
+                      'Enrollment No': s.enrollmentNo || s.enrollmentNumber || 'N/A',
+                      'Course': s.course || 'N/A',
+                      'Exam Name': '-',
+                      'Marks': '-',
+                      'Grade': '-',
+                      'Date': '-'
+                    }];
+                  }
+                  return history.map(exam => ({
+                    'Student Name': s.name || 'N/A',
+                    'Enrollment No': s.enrollmentNo || s.enrollmentNumber || 'N/A',
+                    'Course': s.course || 'N/A',
+                    'Exam Name': exam.examName,
+                    'Marks': exam.marks,
+                    'Grade': exam.grade,
+                    'Date': exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A'
+                  }));
+                });
+                
+                if (flatMarks.length === 0) return;
+                const csv = Papa.unparse(flatMarks);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `Marks_Report_${marksCourseFilter}.csv`;
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              style={{ padding: '8px 16px', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <Download size={16} /> Download CSV
+            </button>
+          </div>
+
+          <div className="native-form-card" style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div className="native-form-input" style={{ margin: 0, display: 'flex', alignItems: 'center', flex: 1, padding: '0 12px' }}>
+                <Search className="w-5 h-5 text-slate-400" style={{ flexShrink: 0 }} />
+                <input 
+                  type="text" 
+                  placeholder="Search student name or enrollment no..." 
+                  value={marksSearchText} 
+                  onChange={(e) => {
+                    setMarksSearchText(e.target.value);
+                  }}
+                  style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', marginLeft: '10px' }}
+                />
+              </div>
+              <div style={{ width: '250px', flexShrink: 0 }}>
+                <select 
+                  className="native-form-select" 
+                  value={marksCourseFilter} 
+                  onChange={(e) => setMarksCourseFilter(e.target.value)}
+                  style={{ width: '100%', margin: 0 }}
+                >
+                  <option value="All">All Courses</option>
+                  {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <div className="native-form-card">
+            <div className="native-table-wrapper">
+              <table className="native-table">
+                <thead>
+                  <tr>
+                    <th>Student Name</th>
+                    <th>Enrollment No</th>
+                    <th>Course</th>
+                    <th>Exam Name</th>
+                    <th>Marks</th>
+                    <th>Grade</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const flatMarks = studentList.filter(s => {
+                      if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
+                      if (marksSearchText) {
+                        const q = marksSearchText.toLowerCase();
+                        const sName = s.name ? String(s.name).toLowerCase() : '';
+                        const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
+                        if (marksSearchText.length > 0) {
+                           console.log(`Filtering student: ${s.name} - ${sEnrollment} against query: ${q}`);
+                        }
+                        return (sName.includes(q) || sEnrollment.includes(q));
+                      }
+                      return true;
+                    }).flatMap(s => {
+                      const history = s.examHistory || [];
+                      if (history.length === 0) return [{ student: s, exam: null }];
+                      return history.map(exam => ({ student: s, exam }));
+                    });
+
+                    if (flatMarks.length === 0) {
+                      return <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No students found matching your criteria.</td></tr>;
+                    }
+
+                    return flatMarks.map((record, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: '500' }}>{record.student.name}</td>
+                        <td>{record.student.enrollmentNo || record.student.enrollmentNumber || 'N/A'}</td>
+                        <td>{record.student.course || 'N/A'}</td>
+                        <td>{record.exam ? record.exam.examName : '-'}</td>
+                        <td style={{ fontWeight: 'bold' }}>{record.exam ? record.exam.marks : '-'}</td>
+                        <td>{record.exam ? <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{record.exam.grade}</span> : '-'}</td>
+                        <td>{record.exam && record.exam.date ? new Date(record.exam.date).toLocaleDateString() : '-'}</td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+          </div>
+        </div>
+      {isAdmissionSummaryModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '800px', maxWidth: '94%', borderRadius: '12px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+            
+            <button 
+              onClick={() => setIsAdmissionSummaryModalVisible(false)}
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px' }}
+            >
+              <X className="w-6 h-6 text-slate-400 hover:text-slate-700" />
+            </button>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e5e7eb', paddingBottom: '16px', marginBottom: '24px' }}>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span 
+                  style={{ cursor: 'pointer', color: drillDownPath.length === 0 ? '#111827' : '#3b82f6' }} 
+                  onClick={() => setDrillDownPath([])}
+                >
+                  Admissions
+                </span>
+                {drillDownPath.map((segment, idx) => (
+                  <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#9ca3af' }}>/</span>
+                    <span 
+                      style={{ cursor: idx === drillDownPath.length - 1 ? 'default' : 'pointer', color: idx === drillDownPath.length - 1 ? '#111827' : '#3b82f6' }}
+                      onClick={() => setDrillDownPath(drillDownPath.slice(0, idx + 1))}
+                    >
+                      {segment}
+                    </span>
+                  </span>
+                ))}
+              </h2>
+              <button 
+                onClick={() => {
+                  const now = new Date();
+                  const filteredList = studentList.filter(s => {
+                    const dStr = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                    const d = dStr ? new Date(dStr) : null;
+                    if (!dStr || !d) return false;
+                    
+                    const sYear = String(d.getFullYear());
+                    const sMonth = String(d.getMonth() + 1).padStart(2, '0');
+                    const sWeek = `Week ${getISOWeekNumber(d)}`;
+                    const sDay = String(d.getDate()).padStart(2, '0');
+
+                    if (drillDownPath.length > 0 && sYear !== drillDownPath[0]) return false;
+                    if (drillDownPath.length > 1 && sMonth !== drillDownPath[1]) return false;
+                    if (drillDownPath.length > 2 && sWeek !== drillDownPath[2]) return false;
+                    if (drillDownPath.length > 3 && sDay !== drillDownPath[3]) return false;
+
+                    return true;
+                  }).map(s => {
+                    const dStr = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                    const dateObj = new Date(dStr);
+                    return {
+                      'Join Date': dateObj.toLocaleDateString(),
+                      'Enrollment No': s.enrollmentNo || 'N/A',
+                      'Student Name': s.name || 'N/A',
+                      'Course': s.course || 'N/A',
+                      'Batch': s.batch || 'N/A',
+                      'Gender': s.gender || 'N/A',
+                      'Mobile': s.phoneNumber || 'N/A',
+                    };
+                  });
+
+                  if (filteredList.length === 0) return;
+                  const csv = Papa.unparse(filteredList);
+                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                  const link = document.createElement('a');
+                  const url = URL.createObjectURL(blob);
+                  link.setAttribute('href', url);
+                  const viewName = drillDownPath.length > 0 ? drillDownPath.join('_') : 'All';
+                  link.setAttribute('download', `Admissions_${viewName}.csv`);
+                  link.style.visibility = 'hidden';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                style={{ padding: '8px 16px', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'background-color 0.2s', display: 'flex', alignItems: 'center', gap: '8px', marginRight: '32px' }}
+              >
+                <Download size={16} /> Download CSV
+              </button>
+            </div>
+            
+            <div style={{ flex: 1, minHeight: '300px' }}>
+              {isDrillDownLoading ? (
+                <div style={{ textAlign: 'center', padding: '60px', color: '#64748b', fontSize: '16px' }}>Loading reporting data...</div>
+              ) : (
+                <>
+                  {drillDownPath.length < 4 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
+                      {drillDownData.map(item => (
+                        <div 
+                          key={item.id} 
+                          onClick={() => setDrillDownPath([...drillDownPath, item.id])}
+                          style={{ padding: '24px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                        >
+                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>{item.name || item.date || item.id}</div>
+                          {item.date && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{new Date(item.date).toLocaleDateString()}</div>}
+                        </div>
+                      ))}
+                      {drillDownData.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#64748b', padding: '40px' }}>No records found for this period.</div>}
+                    </div>
+                  ) : (
+                    <div className="native-table-wrapper">
+                      <table className="native-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Student Name</th>
+                            <th>Enrollment No</th>
+                            <th>Course</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {drillDownData.map(s => {
+                            const dStr = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                            const dateObj = new Date(dStr);
+                            return (
+                              <tr key={s.id}>
+                                <td>{dateObj.toLocaleDateString()}</td>
+                                <td>{s.name}</td>
+                                <td>{s.enrollmentNo || 'N/A'}</td>
+                                <td>{s.course || 'N/A'}</td>
+                              </tr>
+                            );
+                          })}
+                          {drillDownData.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>No students found.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div style={{ marginTop: '32px', padding: '16px 24px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 'bold', color: '#0369a1', fontSize: '16px' }}>
+                Total Admissions {drillDownPath.length > 0 ? `(${drillDownPath[drillDownPath.length-1]})` : '(All Time)'}:
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: '900', color: '#0284c7' }}>
+                {studentList.filter(s => {
+                    const dStr = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                    const d = dStr ? new Date(dStr) : null;
+                    if (!d) return false;
+                    
+                    const sYear = String(d.getFullYear());
+                    const sMonth = String(d.getMonth() + 1).padStart(2, '0');
+                    const sWeek = `Week ${getISOWeekNumber(d)}`;
+                    const sDay = String(d.getDate()).padStart(2, '0');
+
+                    if (drillDownPath.length > 0 && sYear !== drillDownPath[0]) return false;
+                    if (drillDownPath.length > 1 && sMonth !== drillDownPath[1]) return false;
+                    if (drillDownPath.length > 2 && sWeek !== drillDownPath[2]) return false;
+                    if (drillDownPath.length > 3 && sDay !== drillDownPath[3]) return false;
+                    return true;
+                }).length}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+      </main>
+
+    {isEditModalVisible && (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Edit {editingUser?.role === 'staff' ? 'Faculty' : 'Student'} Profile</h2>
+          <form onSubmit={(e) => { 
+            e.preventDefault(); 
+            const formData = new FormData(e.target);
+            const data = editForm.getFieldsValue(true);
+            data.age = formData.get('age') || data.age;
+            data.batch = formData.get('batch') || data.batch;
+            data.experience = formData.get('experience') || data.experience;
+            if (formData.get('status')) data.status = formData.get('status');
+            handleEditSubmit(data); 
+          }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Full Name</label>
+              <input type="text" placeholder="Enter name" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({name: e.target.value})} defaultValue={editForm.getFieldValue('name')} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Email</label>
+              <input type="email" placeholder="Enter email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({email: e.target.value})} defaultValue={editForm.getFieldValue('email')} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Phone Number</label>
+              <input type="text" placeholder="Enter phone number" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({phoneNumber: e.target.value})} defaultValue={editForm.getFieldValue('phoneNumber')} />
+            </div>
+            {editingUser?.role !== 'staff' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Age</label>
+                    <input type="number" name="age" placeholder="Enter age" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({age: Number(e.target.value)})} defaultValue={editForm.getFieldValue('age')} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Batch</label>
+                    <input type="text" name="batch" placeholder="Enter batch" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({batch: e.target.value})} defaultValue={editForm.getFieldValue('batch')} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Enrollment No.</label>
+                  <input type="text" placeholder="Enrollment Number" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({enrollmentNo: e.target.value})} defaultValue={editForm.getFieldValue('enrollmentNo')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Course</label>
+                  <input type="text" placeholder="Course Name" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({course: e.target.value})} defaultValue={editForm.getFieldValue('course')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Gender</label>
+                  <select required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({gender: e.target.value})} defaultValue={editForm.getFieldValue('gender')}>
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Date of Birth</label>
+                  <input type="date" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({dob: e.target.value})} defaultValue={editForm.getFieldValue('dob')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Date of Joining</label>
+                  <input type="date" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({dateOfJoining: e.target.value})} defaultValue={editForm.getFieldValue('dateOfJoining')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Course Fee</label>
+                  <input type="number" placeholder="Course Fee" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({courseFee: Number(e.target.value)})} defaultValue={editForm.getFieldValue('courseFee')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
+                  <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                    <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
+                    <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({parentPhone: e.target.value})} defaultValue={editForm.getFieldValue('parentPhone')?.replace('+91', '')} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Status</label>
+                  <select name="status" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({status: e.target.value})} defaultValue={editForm.getFieldValue('status')}>
+                    <option value="Active">Active</option>
+                    <option value="Passed Out">Passed Out</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Drop-out">Drop-out</option>
+                  </select>
+                </div>
+              </div>
+            )}
+            {editingUser?.role === 'staff' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty ID</label>
+                  <input type="text" name="facultyId" placeholder="Enter Faculty/Employee ID" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({facultyId: e.target.value})} defaultValue={editForm.getFieldValue('facultyId')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Age (Optional)</label>
+                  <input type="number" name="age" placeholder="Enter age" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({age: e.target.value})} defaultValue={editForm.getFieldValue('age')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Previous Experience / Workplace (Optional)</label>
+                  <input type="text" name="experience" placeholder="e.g. 5 Years at XYZ Institute" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({experience: e.target.value})} defaultValue={editForm.getFieldValue('experience')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Degree / Qualification</label>
+                  <input type="text" name="degree" placeholder="e.g. M.Sc Computer Science" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({degree: e.target.value})} defaultValue={editForm.getFieldValue('degree')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Address</label>
+                  <textarea name="address" placeholder="Enter complete address" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box', minHeight: '80px', resize: 'vertical' }} onChange={(e) => editForm.setFieldsValue({address: e.target.value})} defaultValue={editForm.getFieldValue('address')} />
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+              <button type="button" onClick={() => setIsEditModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+              <button type="submit" disabled={editLoading} style={{ padding: '8px 16px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+
+      {isFeeModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card modal-flex-layout-group" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Offline Fee Collection - {selectedStudentForFee?.name || ''}</h2>
+            <div style={{ textAlign: 'center', margin: '12px 0' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Enter the fee amounts received via different modes.</span>
+            </div>
+            
+            <div style={{ padding: '16px', backgroundColor: 'var(--indigo-50, #eef2ff)', borderRadius: '8px', border: '1px solid var(--indigo-100, #e0e7ff)', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                {logoUrl && <img src={logoUrl} alt="Org Logo" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />}
+                <div style={{ fontWeight: 'bold', fontSize: '18px', color: 'var(--indigo-900, #312e81)' }}>{user?.organizationName}</div>
+              </div>
+              <div style={{ fontSize: '16px', color: 'var(--indigo-700, #4338ca)' }}>Course: {selectedStudentForFee?.course || 'N/A'}</div>
+            </div>
+            
+            <form onSubmit={(e) => { e.preventDefault(); handleFeeSubmit(offlineFeeForm.getFieldsValue()); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Bill ID / Receipt Number</label>
+                <input type="text" placeholder="Enter manual Bill ID" required style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({billNumber: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Payment Date</label>
+                <input type="date" required style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({paymentDate: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Payment Time</label>
+                <input type="time" required style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({paymentTime: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Cash Amount</label>
+                <input type="number" min="0" defaultValue="0" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({cashAmount: Number(e.target.value)})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>UPI/GPay Amount</label>
+                <input type="number" min="0" defaultValue="0" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({upiAmount: Number(e.target.value)})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Card Amount</label>
+                <input type="number" min="0" defaultValue="0" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({cardAmount: Number(e.target.value)})} />
+              </div>
+              
+              <div style={{ padding: '12px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                <span>Total Paid = Cash + UPI + Card</span>
+                <span>₹ {totalFeePaid}</span>
+              </div>
+              
+              <div style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Cashier Authentication</h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                   {user?.documents?.signatureUrl || user?.signatureUrl ? (
+                     <img src={user?.documents?.signatureUrl || user?.signatureUrl} alt="Signature" style={{ height: '48px', objectFit: 'contain' }} />
+                   ) : (
+                     <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', padding: '0 16px', fontSize: '14px', fontStyle: 'italic' }}>
+                       [Digital Signature Not Uploaded]
+                     </div>
+                   )}
+                   <div style={{ display: 'flex', flexDirection: 'column', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                     <span style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
+                     <span style={{ fontSize: '12px' }}>Authorized Cashier</span>
+                   </div>
+                </div>
+              </div>
+
+              {isBillUploadEnabled && (
+                <div style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px' }}>Upload Manual Soft-Copy Receipt (Optional Image)</label>
+                  <div style={{ border: '2px dashed var(--border-color)', borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer', backgroundColor: 'var(--card-bg)' }}>
+                     <input type="file" accept="image/*" onChange={async (e) => { 
+                       if(e.target.files && e.target.files.length > 0) { 
+                         offlineFeeForm.setFieldsValue({receiptFile: e.target.files[0]}); 
+                         try {
+                           await logTransaction('UPLOAD_BILL_DOCUMENT', {
+                             token: '[Aadhaar Redacted]',
+                             studentId: selectedStudentForFee?.id,
+                             adminId: user?.id,
+                             adminName: user?.name
+                           });
+                         } catch(err) {}
+                       } 
+                     }} style={{ display: 'none' }} id="bill-upload-input" />
+                     <label htmlFor="bill-upload-input" style={{ cursor: 'pointer', color: 'var(--blue-500, #3b82f6)' }}>
+                       <div style={{ fontSize: '32px', marginBottom: '8px' }}>📁</div>
+                       Click here to select file
+                     </label>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Remarks (Optional)</label>
+                <textarea rows={3} placeholder="Enter any transaction notes" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => offlineFeeForm.setFieldsValue({remarks: e.target.value})} />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                <button type="button" onClick={() => setIsFeeModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                <button type="submit" disabled={loading} style={{ padding: '8px 16px', backgroundColor: 'var(--green-600, #16a34a)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Record Payment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isStatusModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Update Student Status</h2>
+            <form onSubmit={(e) => { e.preventDefault(); handleStatusUpdateSubmit(statusUpdateForm.getFieldsValue()); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>New Status</label>
+                <select required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => statusUpdateForm.setFieldsValue({newStatus: e.target.value})} defaultValue="Active">
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Drop-out">Drop-out</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Reason / Remarks</label>
+                <textarea required placeholder="E.g., Took a 4-month break, Completed final exams, etc." style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box', minHeight: '80px' }} onChange={(e) => statusUpdateForm.setFieldsValue({reason: e.target.value})}></textarea>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+                <button type="button" onClick={() => setIsStatusModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                <button type="submit" disabled={loading} style={{ padding: '8px 16px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Update Status</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isTimelineModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Status Timeline - {selectedStudentForTimeline?.name}</h2>
+            <div className="timeline-container">
+              {selectedStudentForTimeline?.statusHistory?.length > 0 ? (
+                selectedStudentForTimeline.statusHistory.map((log, index) => (
+                  <div key={index} className="timeline-item p-4 mb-4 border border-slate-200 rounded-lg bg-slate-50">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className={`status-badge status-badge-${log.status.toLowerCase().replace(' ', '-')}`}>{log.status}</span>
+                      <span className="text-xs text-slate-500 font-semibold">{new Date(log.timestamp).toLocaleString()}</span>
+                    </div>
+                    <p className="text-slate-700 m-0"><strong>Reason:</strong> {log.reason}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-slate-500 text-center italic">No history available for this student.</p>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button style={{ cursor: 'pointer', padding: '8px 16px', backgroundColor: 'var(--slate-800, #1e293b)', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold' }} onClick={() => setIsTimelineModalVisible(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isProfileModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Student Profile Details</h2>
+            <div className="modal-flex-layout-group" style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+              {selectedStudentForProfile?.documents?.profilePhotoUrl || selectedStudentForProfile?.photoUrl ? (
+                <img src={selectedStudentForProfile.documents?.profilePhotoUrl || selectedStudentForProfile.photoUrl} alt="Profile" style={{ width: '120px', height: '120px', borderRadius: '50%', objectFit: 'cover', border: '4px solid var(--border-color)' }} />
+              ) : (
+                <div style={{ width: '120px', height: '120px', borderRadius: '50%', backgroundColor: 'var(--indigo-100, #e0e7ff)', color: 'var(--indigo-600, #4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', fontWeight: 'bold' }}>
+                  {selectedStudentForProfile?.name?.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '24px', fontWeight: 'bold' }}>{selectedStudentForProfile?.name}</span>
+                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>{selectedStudentForProfile?.course || 'No Course'}</span>
+              </div>
+            </div>
+            
+            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>Verification Documents</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                <span style={{ fontWeight: 'bold' }}>Aadhaar / ID Card</span>
+                {selectedStudentForProfile?.documents?.idProofUrl ? (
+                  <button style={{ cursor: 'pointer', padding: '8px 16px', backgroundColor: 'var(--green-600, #16a34a)', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold' }} onClick={async () => {
+                    try {
+                      await logTransaction('VIEW_ID_DOCUMENT', {
+                        token: '[Aadhaar Redacted]',
+                        studentId: selectedStudentForProfile.id,
+                        adminId: user?.id,
+                        adminName: user?.name
+                      });
+                    } catch (e) {}
+                    window.open(selectedStudentForProfile.documents.idProofUrl, '_blank');
+                  }}>View Document</button>
+                ) : (
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '14px', backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '12px' }}>Pending Upload</span>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button style={{ cursor: 'pointer', padding: '8px 16px', backgroundColor: 'var(--slate-800, #1e293b)', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold' }} onClick={() => setIsProfileModalVisible(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {globalSearchModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>{globalSearchAction === 'edit' ? 'Edit Student Record' : 'Delete Student Record'}</h2>
+              <button onClick={() => { setGlobalSearchModalVisible(false); setGlobalSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><XCircle /></button>
+            </div>
+            
+            <div className="search-bar-wrapper" style={{ marginBottom: '24px' }}>
+              <Search className="search-bar-icon" />
+              <input 
+                className="search-bar-input"
+                type="text" 
+                placeholder="Search by Name, Enrollment ID, or Mobile..." 
+                value={globalSearchQuery}
+                onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                style={{ width: '100%', padding: '12px 12px 12px 40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '15px' }}
+                autoFocus
+              />
+            </div>
+            
+            <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {globalSearchQuery.trim() === '' ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>Start typing to search for a student...</div>
+              ) : (
+                studentList.filter(s => {
+                  const q = globalSearchQuery.toLowerCase();
+                  return (s.name || '').toLowerCase().includes(q) || 
+                         (s.enrollmentNo || '').toLowerCase().includes(q) || 
+                         (s.phoneNumber || '').includes(q);
+                }).map(student => (
+                  <div 
+                    key={student.id} 
+                    style={{ padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    onClick={() => {
+                       setGlobalSearchModalVisible(false);
+                       setGlobalSearchQuery('');
+                       if (globalSearchAction === 'edit') {
+                          handleEditClick(student);
+                       } else if (globalSearchAction === 'delete') {
+                          if (window.confirm(`Are you sure you want to permanently delete ${student.name}?`)) {
+                             handleDeleteUser(student.id);
+                          }
+                       }
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '15px' }}>{student.name}</div>
+                      <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>ID: {student.enrollmentNo || student.id.substring(0,6)} | Mob: {student.phoneNumber}</div>
+                    </div>
+                    <div style={{ padding: '6px 12px', backgroundColor: globalSearchAction === 'edit' ? 'var(--blue-500, #3b82f6)' : 'var(--red-500, #ef4444)', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
+                      {globalSearchAction === 'edit' ? 'Edit' : 'Delete'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Journey Attendance Drill-Down Overlay */}
+      {isJourneyAttendanceModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>{selectedJourneyAttendanceDate ? `Sessions on ${new Date(selectedJourneyAttendanceDate).toLocaleDateString()}` : 'Attendance History'}</h2>
+              <button onClick={() => { setIsJourneyAttendanceModalVisible(false); setSelectedJourneyAttendanceDate(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+            </div>
+            
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {(() => {
+                const uniqueSessions = [];
+                if (selectedJourneyStudent && attendanceHistoryList) {
+                  const map = new Map();
+                  attendanceHistoryList.forEach(log => {
+                    if (log.isFinal === false) return;
+                    const rec = log.records?.find(r => r.studentName === selectedJourneyStudent.name);
+                    if (rec) {
+                      const key = `${log.date}_${log.batchName}_${log.slot}`;
+                      if (!map.has(key)) {
+                        map.set(key, { date: log.date, batch: log.batchName, slot: log.slot, status: rec.status, faculty: log.facultyName });
+                      }
+                    }
+                  });
+                  map.forEach(v => uniqueSessions.push(v));
+                  uniqueSessions.sort((a,b) => new Date(b.date) - new Date(a.date));
+                }
+
+                if (!selectedJourneyAttendanceDate) {
+                  // Show list of unique dates
+                  const uniqueDates = [...new Set(uniqueSessions.map(s => s.date))];
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {uniqueDates.map((dateStr, idx) => (
+                        <div 
+                          key={idx}
+                          onClick={() => setSelectedJourneyAttendanceDate(dateStr)}
+                          style={{ padding: '16px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold' }}
+                        >
+                          <span>{new Date(dateStr).toLocaleDateString()}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--blue-500, #3b82f6)' }}>View Sessions →</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                } else {
+                  // Drill down to specific sessions for that date
+                  const sessionsOnDate = uniqueSessions.filter(s => s.date === selectedJourneyAttendanceDate);
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button 
+                        onClick={() => setSelectedJourneyAttendanceDate(null)}
+                        style={{ padding: '8px 16px', alignSelf: 'flex-start', marginBottom: '16px', cursor: 'pointer', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold' }}
+                      >
+                        ← Back to Dates
+                      </button>
+                      {sessionsOnDate.map((u, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                          <div>
+                            <div style={{ fontWeight: 'bold', fontSize: '15px', color: 'var(--text-main)', marginBottom: '4px' }}>{u.batch}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Slot: {u.slot} | Faculty: {u.faculty}</div>
+                          </div>
+                          {u.status === 'P' ? (
+                            <span style={{ padding: '6px 12px', backgroundColor: 'rgba(22,163,74,0.1)', color: 'var(--green-600, #16a34a)', fontWeight: 'bold', borderRadius: '6px', fontSize: '13px' }}>Present</span>
+                          ) : (
+                            <span style={{ padding: '6px 12px', backgroundColor: 'rgba(220,38,38,0.1)', color: 'var(--red-600, #dc2626)', fontWeight: 'bold', borderRadius: '6px', fontSize: '13px' }}>Absent</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Journey Fee Ledger Overlay */}
+      {isJourneyFeeModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '700px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Detailed Fee Ledger</h2>
+              <button onClick={() => setIsJourneyFeeModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+            </div>
+            
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead style={{ backgroundColor: 'var(--theme-bg-premium)' }}>
+                  <tr>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Date</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Receipt</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Amount Paid</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Running Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const sortedHistory = [...(selectedJourneyStudent?.feeHistory || [])].sort((a,b) => new Date(a.paymentDate || 0) - new Date(b.paymentDate || 0));
+                    let currentBalance = selectedJourneyStudent?.courseFee || 28000;
+                    return sortedHistory.map((fee, idx) => {
+                      const amount = fee.amountPaid || (fee.cashAmount || 0) + (fee.upiAmount || 0) + (fee.cardAmount || 0) || 0;
+                      currentBalance -= amount;
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>{fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString() : 'N/A'}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-secondary)' }}>{fee.billNumber || 'Manual Entry'}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>₹{amount}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>₹{currentBalance}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+    </div>
   );
 };
 

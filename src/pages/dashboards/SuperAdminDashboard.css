@@ -1,0 +1,28 @@
+/* SuperAdminDashboard.css */
+@import './AdminDashboard.css'; /* Share structural rules with Admin */
+
+.superadmin-layout-wrapper {
+  display: flex !important;
+  min-height: 100vh !important;
+  flex-direction: row !important;
+}
+
+.superadmin-sidebar {
+  width: 260px !important;
+  flex: 0 0 260px !important;
+  max-width: 260px !important;
+  min-width: 260px !important;
+  flex-shrink: 0 !important;
+}
+
+.superadmin-main-content {
+  flex-grow: 1 !important;
+  padding: 2rem !important;
+  min-width: 0 !important;
+}
+
+.superadmin-brand-logo {
+  max-width: 130px !important;
+  height: auto !important;
+  object-fit: contain !important;
+}

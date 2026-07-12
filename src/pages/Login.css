@@ -1,0 +1,153 @@
+/* Login.css */
+
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--bg-main);
+  background-image: radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
+                    radial-gradient(at 100% 100%, rgba(20, 184, 166, 0.1) 0px, transparent 50%);
+  padding: 1rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 3rem 2.5rem;
+  background: var(--card-bg);
+  border-radius: 24px;
+  box-shadow: var(--shadow-floating);
+  border: 1px solid var(--border-color);
+}
+
+.login-logo-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.login-logo {
+  width: 56px;
+  height: 56px;
+  background: var(--bg-hover);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-soft);
+}
+
+.login-icon {
+  color: var(--color-primary);
+}
+
+.login-title {
+  display: block;
+  width: 100%;
+  text-align: center;
+  color: var(--text-main);
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  margin-top: 0;
+  letter-spacing: -0.025em;
+}
+
+.login-subtitle {
+  display: block;
+  width: 100%;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+}
+
+.login-quote {
+  display: none; /* Hide for minimal SaaS look */
+}
+
+.login-form-group {
+  display: block;
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+
+/* Overriding Antd styles for the login context */
+.login-card .ant-form-item {
+  margin-bottom: 1.5rem;
+}
+
+.login-input {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px !important;
+  font-size: 1rem !important;
+}
+
+.login-btn-primary {
+  display: flex !important;
+  width: 100%;
+  height: 48px !important;
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: #ffffff !important;
+  border-radius: 12px !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  margin-bottom: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.39);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.23);
+  background-color: #1d4ed8 !important;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  position: relative;
+}
+
+.login-divider-line {
+  flex-grow: 1;
+  height: 1px;
+  background-color: var(--border-color);
+}
+
+.login-divider-text {
+  padding: 0 1rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.login-btn-google {
+  display: flex !important;
+  width: 100%;
+  height: 48px !important;
+  background-color: var(--card-bg) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-main) !important;
+  border-radius: 12px !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  box-shadow: var(--shadow-soft);
+  transition: background-color 0.2s ease;
+}
+
+.login-btn-google:hover {
+  background-color: var(--bg-hover) !important;
+}

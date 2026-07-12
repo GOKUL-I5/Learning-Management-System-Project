@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, indexedDBLocalPersistence } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -17,3 +17,9 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+// Enforce local browser storage persistence to prevent redirect nullification due to cross-origin tracking prevention
+setPersistence(auth, indexedDBLocalPersistence)
+  .catch((error) => {
+    console.error("Firebase persistence configuration error:", error);
+  });

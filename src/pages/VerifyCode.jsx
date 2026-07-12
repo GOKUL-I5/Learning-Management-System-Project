@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Form, Input, Button, message } from 'antd';
+import { Form, Input, Button } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { verifyUniqueCode } from '../firebase/services';
 import { KeyRound, ShieldCheck, Mail, LogOut } from 'lucide-react';
@@ -12,6 +12,13 @@ const VerifyCode = () => {
   const [form] = Form.useForm();
 
   useEffect(() => {
+    // Clean up any residual Firebase/Google API hooks that might freeze the window closure
+    if (window.gapi) {
+      window.gapi = null;
+    }
+    const gapiScripts = document.querySelectorAll('script[src*="apis.google.com"]');
+    gapiScripts.forEach(script => script.remove());
+    
     // Check if there's a pending user
     const pendingUserStr = localStorage.getItem('pending_user');
     if (!pendingUserStr) {
@@ -26,17 +33,17 @@ const VerifyCode = () => {
     setLoading(true);
     try {
       const user = await verifyUniqueCode(values.accessCode);
-      message.success(`Verification successful. Welcome back!`);
-      
+      // Removed alert for zero-delay instant push
       // Redirect based on role
       switch (user.role) {
-        case 'admin': navigate('/admin'); break;
-        case 'staff': navigate('/staff'); break;
-        case 'student': navigate('/student'); break;
-        default: navigate('/');
+        case 'superadmin': navigate('/admin-dashboard', { replace: true }); break;
+        case 'admin': navigate('/admin', { replace: true }); break;
+        case 'staff': navigate('/staff', { replace: true }); break;
+        case 'student': navigate('/student', { replace: true }); break;
+        default: navigate('/staff', { replace: true }); // Fallback to a valid dashboard, never root
       }
     } catch (error) {
-      message.error(error.message || 'Invalid Access Code. Please contact your administrator.');
+      window.alert(error.message || 'Invalid Access Code. Please contact your administrator.');
     } finally {
       setLoading(false);
     }

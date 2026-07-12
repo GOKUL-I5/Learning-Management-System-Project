@@ -1,0 +1,281 @@
+/* StudentDashboard.css */
+
+.student-data-container,
+.student-module-card,
+.ant-card {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* Force dark text explicitly to override any remaining white text classes */
+.student-data-container *,
+.student-module-card * {
+  color: inherit; /* inherit from container (#0f172a) */
+}
+
+.student-course-grid,
+.student-zoom-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+  gap: 1.5rem !important;
+  width: 100% !important;
+}
+
+.student-profile-name {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.025em !important;
+}
+
+.student-profile-org {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 0.9rem !important;
+  color: #4b5563 !important;
+  letter-spacing: 0 !important;
+}
+
+.student-expanded-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2rem !important;
+  width: 100% !important;
+}
+
+@media (min-width: 1024px) {
+  .student-expanded-layout {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+.student-profile-details {
+  padding: 2rem !important;
+}
+
+.student-profile-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  margin-bottom: 1.25rem !important;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 1.25rem;
+}
+.student-profile-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0 !important;
+  padding-bottom: 0;
+}
+
+.student-no-course-placeholder {
+  padding: 4rem 2rem !important;
+}
+
+.student-edit-pencil {
+  color: #0f172a !important;
+}
+.student-edit-pencil:hover {
+  color: #475569 !important;
+}
+
+.student-payment-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: #ffffff;
+  padding: 2rem;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.student-payment-input-container {
+  width: 100%;
+  max-width: 320px;
+  margin: 1.5rem auto;
+  display: block;
+}
+
+.student-payment-label {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  text-align: center;
+  width: 100%;
+  display: block;
+  color: #334155;
+}
+
+/* High-End Modern UI Overhaul */
+.main-dashboard-layout-wrapper {
+  background-color: #f8fafc !important;
+}
+
+.main-dashboard-layout-wrapper .rounded-2xl {
+  background-color: #ffffff !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+  border-radius: 16px !important;
+  padding: 32px !important;
+  border: none !important;
+}
+
+/* Modern Input Fields */
+.main-dashboard-layout-wrapper input:not([type="file"]), 
+.main-dashboard-layout-wrapper select {
+  display: block !important;
+  width: 100% !important;
+  padding: 12px 16px !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  background-color: #f9fafb !important;
+  font-size: 1rem !important;
+  color: #111827 !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.main-dashboard-layout-wrapper input:not([type="file"]):focus, 
+.main-dashboard-layout-wrapper select:focus {
+  background-color: #ffffff !important;
+  border-color: #3b82f6 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+}
+
+.main-dashboard-layout-wrapper input[type="file"] {
+  display: none !important;
+}
+
+/* Elegant Typography & Labels */
+.main-dashboard-layout-wrapper form label,
+.settings-form-label {
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  color: #4b5563 !important;
+  margin-bottom: 8px !important;
+  display: block !important;
+  letter-spacing: 0.025em !important;
+}
+
+/* Premium Primary Button */
+.settings-save-btn {
+  background-color: #3b82f6 !important;
+  color: white !important;
+  padding: 12px 24px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  width: auto;
+  display: inline-block;
+}
+
+.settings-save-btn:hover {
+  background-color: #2563eb !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2) !important;
+}
+
+.student-payment-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1rem;
+  text-align: center;
+  display: block;
+  background-color: #f8fafc;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.student-payment-input:focus {
+  border-color: #14b8a6;
+}
+
+.student-payment-btn-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.student-payment-btn {
+  width: 100%;
+  max-width: 320px;
+  padding: 0.85rem !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  margin: 0 auto;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 0.5rem;
+  height: auto !important;
+}
+
+/* Birthday Bloom Animation */
+@keyframes bloom {
+  0% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 0 rgba(236, 72, 153, 0)); }
+  50% { transform: scale(1.05); opacity: 0.9; filter: drop-shadow(0 0 20px rgba(236, 72, 153, 0.6)); }
+  100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 0 rgba(236, 72, 153, 0)); }
+}
+
+.birthday-bloom-effect {
+  animation: bloom 3s ease-in-out infinite;
+  border: 2px solid #fbcfe8 !important;
+  background: linear-gradient(135deg, #fdf2f8 0%, #fff 100%) !important;
+}
+
+/* Smart Notification Widget */
+.smart-notification-widget {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.smart-notification-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.smart-notification-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.smart-notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.smart-notification-item.urgent {
+  background-color: #fef2f2;
+  border-left: 4px solid #ef4444;
+  color: #7f1d1d;
+}
+
+.smart-notification-item.warning {
+  background-color: #fffbeb;
+  border-left: 4px solid #f59e0b;
+  color: #78350f;
+}
+
+.smart-notification-item.info {
+  background-color: #f0fdf4;
+  border-left: 4px solid #10b981;
+  color: #064e3b;
+}

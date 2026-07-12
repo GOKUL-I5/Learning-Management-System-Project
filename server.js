@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import twilio from 'twilio';
 import admin from 'firebase-admin';
 import { readFileSync } from 'fs';
+import paymentRoutes from './src/routes/paymentRoutes.js';
 
 dotenv.config();
 
@@ -34,6 +35,8 @@ if (process.env.VITE_TWILIO_ACCOUNT_SID && process.env.VITE_TWILIO_AUTH_TOKEN) {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/payment', paymentRoutes);
 
 const PORT = process.env.PORT || 5000;
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Select, message, Table, Layout, Typography, Popconfirm } from 'antd';
-import { createOrganization, getOrganizationsWithAdmins, createOrganizationAdmin, logoutUser, deleteOrganizationAndAdmin } from '../../firebase/services';
+import { createOrganization, getOrganizationsWithAdmins, createOrganizationAdmin, logoutUser, deleteOrganizationAndAdmin, toggleOrganizationStatus } from '../../firebase/services';
 import { Building2, UserPlus, LogOut, ShieldAlert } from 'lucide-react';
+import './SuperAdminDashboard.css';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -63,6 +64,17 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const handleToggleStatus = async (record) => {
+    try {
+      const newStatus = record.status === 'suspended' ? 'active' : 'suspended';
+      await toggleOrganizationStatus(record.id, newStatus);
+      message.success(`Organization ${newStatus === 'suspended' ? 'suspended' : 'reactivated'} successfully`);
+      fetchOrganizations();
+    } catch (error) {
+      message.error(error.message);
+    }
+  };
+
   const columns = [
     { title: 'Organization Name', dataIndex: 'name', key: 'name' },
     { title: 'Access ID', dataIndex: 'accessId', key: 'accessId', render: text => <span className="font-mono bg-slate-100 px-2 py-1 rounded text-slate-700">{text}</span> },
@@ -74,25 +86,43 @@ const SuperAdminDashboard = () => {
       </div>
     )},
     { title: 'Actions', key: 'actions', render: (_, record) => (
-        <Popconfirm title="Are you sure you want to delete this Organization along with its Admin?" onConfirm={() => handleDeleteOrganization(record.id)} okText="Yes" cancelText="No">
-          <Button danger size="small">Delete</Button>
-        </Popconfirm>
+        <div className="flex gap-2 items-center">
+          <Button 
+            type="primary" 
+            danger={record.status !== 'suspended'} 
+            className={record.status === 'suspended' ? 'bg-green-600 border-none' : ''}
+            onClick={() => handleToggleStatus(record)}
+            size="small"
+          >
+            {record.status === 'suspended' ? 'Reactivate Access' : 'Suspend Access'}
+          </Button>
+          <Popconfirm title="Are you sure you want to delete this Organization along with its Admin?" onConfirm={() => handleDeleteOrganization(record.id)} okText="Yes" cancelText="No">
+            <Button danger size="small">Delete</Button>
+          </Popconfirm>
+        </div>
       ) 
     },
   ];
 
   return (
-    <Layout className="min-h-screen bg-slate-50">
-      <Header className="bg-white border-b border-slate-200 px-8 flex items-center justify-between">
+    <div style={{ backgroundColor: 'var(--bg-main)' }} className="flex justify-center items-center h-screen w-full">
+      <Layout className="app-window-container w-full max-w-[1400px]">
+        <Header className="sticky top-0 z-10 flex justify-between items-center px-8 py-6 flex-wrap gap-4 h-auto leading-normal" style={{ backgroundColor: 'var(--card-bg)' }}>
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-extrabold text-slate-800 m-0 tracking-tight">Welcome Back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Santhanabharath The king!</span></h1>
+          <h1 className="m-0 text-lg font-bold" style={{ color: 'var(--text-main)' }}>Welcome Back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-teal-500">Santhanabharath The king!</span></h1>
         </div>
-        <Button icon={<LogOut className="w-4 h-4" />} onClick={logoutUser} danger>
-          Logout
-        </Button>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex flex-col items-end gap-1 hidden sm:flex">
+            <div className="text-sm font-bold" style={{ color: 'var(--text-main)' }}>Super Admin</div>
+            <div className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>System Access: <span style={{ color: 'var(--color-primary)' }}>Global</span></div>
+          </div>
+          <button onClick={logoutUser} className="top-logout-btn flex items-center gap-2">
+            <LogOut className="w-4 h-4" /> Logout
+          </button>
+        </div>
       </Header>
 
-      <Content className="p-8 max-w-7xl mx-auto w-full">
+      <Content className="p-8 max-w-7xl mx-auto w-full superadmin-main-content">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           <Card 
             title={<span className="flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-500" /> Create New Organization</span>}
@@ -105,7 +135,7 @@ const SuperAdminDashboard = () => {
               <Form.Item name="accessId" label="Organization Access ID" rules={[{ required: true, message: 'Please provide a unique Access ID for this organization' }]}>
                 <Input placeholder="Enter custom access ID (e.g., ORG2024)" size="large" />
               </Form.Item>
-              <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full bg-blue-600">
+              <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
                 Create Organization
               </Button>
             </Form>
@@ -132,7 +162,7 @@ const SuperAdminDashboard = () => {
               <Form.Item name="phoneNumber" label="Admin Phone Number" rules={[{ required: true, message: 'Please input phone number' }]}>
                 <Input placeholder="Enter admin phone number" size="large" />
               </Form.Item>
-              <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full bg-indigo-600">
+              <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
                 Create Admin
               </Button>
             </Form>
@@ -154,7 +184,8 @@ const SuperAdminDashboard = () => {
           </Card>
         </div>
       </Content>
-    </Layout>
+      </Layout>
+    </div>
   );
 };
 

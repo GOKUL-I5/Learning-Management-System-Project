@@ -18,13 +18,14 @@ const FloatingParticles = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div className="floating-particles-container z-0">
       {particles.map((p) => {
         const { Icon } = p;
         return (
           <motion.div
             key={p.id}
-            className="absolute text-blue-200/40"
+            className="absolute"
+            style={{ color: 'var(--text-muted)', opacity: 'var(--icon-opacity)', transition: 'all 0.3s ease' }}
             initial={{
               x: `${p.left}vw`,
               y: `${p.top}vh`,

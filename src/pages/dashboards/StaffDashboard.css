@@ -1,0 +1,50 @@
+/* StaffDashboard.css */
+
+.staff-dashboard-wrapper {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.5rem !important;
+}
+
+.staff-header-section {
+  margin-bottom: 2rem !important;
+}
+
+/* Ensure global layout doesn't overlap */
+.staff-dashboard-wrapper > * {
+  z-index: 1;
+}
+
+.offline-fee-modal .ant-modal-content {
+  padding: 1rem;
+}
+.offline-fee-modal .offline-fee-input, .offline-fee-modal .offline-fee-btn {
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--slate-300);
+}
+.offline-fee-modal .offline-fee-input::placeholder, .offline-fee-modal .offline-fee-input input::placeholder {
+  text-align: center;
+}
+.offline-fee-modal .offline-fee-input input {
+  text-align: center;
+}
+.offline-fee-total {
+  padding: 1rem;
+  background-color: var(--slate-50);
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+.offline-fee-total .total-label {
+  font-weight: 600;
+  color: var(--slate-600);
+}
+.offline-fee-total .total-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--green-600);
+}
