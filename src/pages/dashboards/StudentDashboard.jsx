@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { logoutUser, uploadProfilePhoto, getStudentAssignments, getOrganizationCourses, subscribeToStudentAssignments, getOrganizationDetails, updateUserDoc, subscribeToFeeTransactions, updateStudentStatus, listenToOrganizationStatus, getCourseAssignments, logTransaction, subscribeToStudentSchedules } from '../../firebase/services';
-import { LogOut, BookOpen, User, Users, Building, Mail, Key, Calendar, Clock, ExternalLink, FileText, Download, Video, Pencil, Check, X, CreditCard, DollarSign, Receipt, FolderOpen, Upload as UploadIcon, Settings } from 'lucide-react';
+import { LogOut, BookOpen, User, Users, Building, Mail, Key, Calendar, Clock, ExternalLink, FileText, Download, Video, Pencil, Check, X, CreditCard, DollarSign, Receipt, FolderOpen, Upload as UploadIcon, Settings, Bell, ChevronDown, Shield, UserCircle, MonitorPlay, Moon, Search } from 'lucide-react';
 import './StudentDashboard.css';
 
 const message = {
@@ -224,278 +224,283 @@ This is an automatically generated receipt.
   };
 
   return (
-    <div className="main-dashboard-layout-wrapper" style={{ display: 'flex', flexDirection: 'row', height: '100vh', overflow: 'hidden', backgroundColor: 'var(--bg-main)', color: 'var(--text-main-dark)' }}>
-        {/* Sidebar Navigation */}
-        <aside className="flex flex-col h-full overflow-y-auto w-[260px] shrink-0" style={{ backgroundColor: 'var(--card-bg-clean)' }}>
-        <div className="flex flex-col items-center justify-center p-6 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center justify-center w-24 h-24 rounded-full border-2 overflow-hidden" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-hover)' }}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="Org Logo" className="w-full h-full object-contain p-2" />
-            ) : (
-              <BookOpen className="w-12 h-12 text-blue-600" />
-            )}
-          </div>
-          <h4 className="mt-4 text-sm font-bold text-center" style={{ color: 'var(--text-main)' }}>Student Portal</h4>
+    <div className="uxer-layout">
+      {/* Sidebar Navigation */}
+      <aside className="uxer-sidebar">
+        <div className="uxer-sidebar-logo">
+          <div className="logo-icon"></div>
+          <span style={{ fontSize: '24px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px' }}>Student</span>
+        </div>
+        
+        <div className="uxer-sidebar-menu">
+          <div className="uxer-sidebar-category">MAIN MENU</div>
+          <div onClick={() => setActiveTab('dashboard')} className={`uxer-sidebar-item ${activeTab === 'dashboard' ? 'active' : ''}`}><User style={{ width: '20px', height: '20px' }} /> Dashboard</div>
+          <div onClick={() => setActiveTab('course')} className={`uxer-sidebar-item ${activeTab === 'course' ? 'active' : ''}`}><FileText style={{ width: '20px', height: '20px' }} /> View Course</div>
+          <div onClick={() => setActiveTab('fee')} className={`uxer-sidebar-item ${activeTab === 'fee' ? 'active' : ''}`}><CreditCard style={{ width: '20px', height: '20px' }} /> Fee Payment</div>
+          <div onClick={() => setActiveTab('documents')} className={`uxer-sidebar-item ${activeTab === 'documents' ? 'active' : ''}`}><FolderOpen style={{ width: '20px', height: '20px' }} /> Document Center</div>
+          <div onClick={() => setActiveTab('settings')} className={`uxer-sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}><Settings style={{ width: '20px', height: '20px' }} /> Settings</div>
         </div>
 
-        <nav className="flex-1 py-4 px-4">
-          <ul className="flex flex-col gap-2 list-none p-0 m-0">
-            <li 
-              onClick={() => setActiveTab('dashboard')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'dashboard' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'dashboard' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'dashboard' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><User className="w-5 h-5" /> Dashboard</li>
-            <li 
-              onClick={() => setActiveTab('course')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'course' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'course' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'course' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><FileText className="w-5 h-5" /> View Course</li>
-            <li 
-              onClick={() => setActiveTab('fee')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'fee' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'fee' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'fee' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><CreditCard className="w-5 h-5" /> Fee Payment</li>
-            <li 
-              onClick={() => setActiveTab('documents')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'documents' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'documents' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'documents' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><FolderOpen className="w-5 h-5" /> Document Center</li>
-            <li 
-              onClick={() => setActiveTab('settings')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'settings' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'settings' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'settings' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Settings className="w-5 h-5" /> Settings</li>
-          </ul>
-        </nav>
+        <div style={{ padding: '0 8px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#666666', fontSize: '14px', fontWeight: '500' }}>
+            <Moon style={{ width: '20px', height: '20px' }} /> Dark mode
+          </div>
+          <div style={{ width: '36px', height: '20px', backgroundColor: '#111111', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
+            <div style={{ width: '16px', height: '16px', backgroundColor: '#FFFFFF', borderRadius: '50%', position: 'absolute', top: '2px', right: '2px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}></div>
+          </div>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex flex-col h-full flex-1 main-content-display-pane">
-        {/* Header Banner */}
-        <header className="sticky top-0 z-10 flex justify-between items-center px-8 py-6" style={{ backgroundColor: 'var(--panel-solid-white)', borderBottom: '1px solid var(--border-color)' }}>
-          <div className="flex items-center gap-3">
-            <h1 className="m-0 text-lg font-bold" style={{ color: 'var(--text-primary-crisp)' }}>Student Portal</h1>
+      <main className="uxer-main">
+        <header className="uxer-header">
+          <div className="uxer-header-left">
+            <div className="org-text" style={{ textTransform: 'uppercase' }}>{user?.organizationName || 'Organization'}</div>
+            <h1>Student Portal</h1>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex flex-col items-end gap-1">
-              <div className="text-sm font-bold" style={{ color: 'var(--text-primary-crisp)' }}>{user?.name || 'Student'}</div>
-              <div className="text-xs font-black" style={{ color: '#111' }}>
-                Organization: <span style={{ color: '#333', fontWeight: 'bold' }}>{user?.organizationName}</span>
+          <div className="uxer-header-right">
+            <div className="uxer-search">
+              <Search style={{ width: '16px', height: '16px', color: '#999', flexShrink: 0 }} />
+              <input type="text" placeholder="Search" />
+              <div className="uxer-shortcut">&#8984; F</div>
+            </div>
+            
+            <button style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
+              <Bell style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
+              <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', backgroundColor: 'var(--text-main)', borderRadius: '50%', border: '2px solid var(--card-bg)' }}></span>
+            </button>
+            <div style={{ height: '32px', width: '1px', backgroundColor: 'var(--border-color)', margin: '0 8px' }}></div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', flexShrink: 0 }}>
+              {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
+                <img src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                  {user?.name?.charAt(0).toUpperCase() || 'K'}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Enrollment No. {user?.enrollmentNo || '154'}</span>
               </div>
             </div>
-            <button onClick={logoutUser} className="top-logout-btn flex items-center gap-2">
-              <LogOut className="w-4 h-4" /> Logout
+            
+            <button onClick={logoutUser} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }} title="Logout">
+              <LogOut style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
             </button>
           </div>
         </header>
 
         {/* Content Wrapper */}
-        <div className="p-6 w-full max-w-6xl mx-auto box-border">
+        <div style={{ padding: '32px 48px', overflowY: 'auto' }}>
           
           {activeTab === 'dashboard' && (
-            <div className="smart-notification-widget mb-6" style={{ gridColumn: '1 / -1' }}>
-              <h3 className="smart-notification-title">
-                <Calendar className="w-5 h-5 text-indigo-500" /> Smart Notifications & Reminders
-              </h3>
-              <div className="smart-notification-list">
-                {isBirthday && (
-                  <div className="smart-notification-item" style={{ backgroundColor: '#fdf2f8', borderLeft: '4px solid #ec4899', color: '#831843' }}>
-                    <strong>🎉 Happy Birthday, {user?.name}!</strong> Have a wonderful day ahead!
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              
+              {/* Welcome Banner */}
+              <div className="uxer-table-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '32px', flexWrap: 'wrap', gap: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                    {user?.name?.charAt(0).toUpperCase() || 'K'}
                   </div>
-                )}
-                {((user?.courseFee || 28000) - (user?.paidFee || 0)) > 0 && (
-                  <div className="smart-notification-item urgent">
-                    <strong>💰 Fee Reminder:</strong> You have an outstanding balance of ₹{((user?.courseFee || 28000) - (user?.paidFee || 0))}. Please complete your payment.
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <h2 style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      Good afternoon, {user?.name?.split(' ')[0] || 'Karthik'}! <span role="img" aria-label="wave">👋</span>
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary)', margin: 0, fontWeight: '500', fontSize: '16px' }}>Here's what's happening with your academic journey today.</p>
                   </div>
-                )}
-                {assignment && (
-                  <div className="smart-notification-item warning">
-                    <strong>📚 Course Alert:</strong> You have an active assignment/module for {assignment.courseName}. Please check your Course Material.
-                  </div>
-                )}
-                <div className="smart-notification-item info">
-                  <strong>📝 Attendance:</strong> Your recent attendance has been logged successfully. Maintain above 85% to appear for exams.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifySelf: 'flex-end', position: 'relative', width: '120px', height: '80px' }}>
+                  {/* Decorative element resembling the illustration */}
+                  <BookOpen style={{ width: '64px', height: '64px', position: 'absolute', right: '-16px', bottom: '-16px', opacity: 0.2, color: 'var(--uxer-primary)' }} />
+                  <User style={{ width: '64px', height: '64px', position: 'relative', zIndex: 10, color: 'var(--text-main)' }} />
                 </div>
               </div>
+
+              {/* 4 Stats Cards */}
+              <div style={{ width: '100%', marginBottom: '24px' }}>
+                <div className="uxer-stats-grid">
+                  <div className="uxer-stat-card">
+                    <div className="uxer-stat-title">TODAY'S CLASSES</div>
+                    <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                      <div className="uxer-stat-value">{mySchedules.length}</div>
+                      <div className="uxer-stat-badge">
+                        <span className="uxer-stat-badge-text" style={{ textAlign: 'left', marginLeft: 0 }}>{mySchedules.length === 0 ? 'No classes scheduled' : 'Classes today'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="uxer-stat-card">
+                    <div className="uxer-stat-title">ATTENDANCE</div>
+                    <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                      <div className="uxer-stat-value">92%</div>
+                      <div className="uxer-stat-badge">
+                        <span className="uxer-stat-badge-text" style={{ textAlign: 'left', marginLeft: 0 }}>This Month</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="uxer-stat-card">
+                    <div className="uxer-stat-title">OUTSTANDING FEES</div>
+                    <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                      <div className="uxer-stat-value">₹{((user?.courseFee || 28000) - (user?.paidFee || 0)).toLocaleString()}</div>
+                      <div className="uxer-stat-badge">
+                        {((user?.courseFee || 28000) - (user?.paidFee || 0)) > 0 ? (
+                          <div className="uxer-stat-badge-pill red">1 Pending Payment</div>
+                        ) : (
+                          <div className="uxer-stat-badge-pill green">All clear</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="uxer-stat-card">
+                    <div className="uxer-stat-title">ENROLLMENT NO.</div>
+                    <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                      <div className="uxer-stat-value">{user?.enrollmentNo || '154'}</div>
+                      <div className="uxer-stat-badge">
+                        <div className="uxer-stat-badge-pill green">Active</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Two Column Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', alignItems: 'start' }}>
+                
+                {/* Left Column */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  {/* Smart Notifications & Reminders */}
+                  <div className="uxer-table-card" style={{ padding: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Bell style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} /> Smart Notifications
+                      </h3>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        View All <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {((user?.courseFee || 28000) - (user?.paidFee || 0)) > 0 && (
+                        <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--card-bg)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                           <div style={{ padding: '8px', backgroundColor: 'var(--bg-hover)', borderRadius: '50%', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                             <DollarSign style={{ width: '20px', height: '20px', color: '#1e293b' }} />
+                           </div>
+                           <div style={{ flex: 1 }}>
+                             <div style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '14px', marginBottom: '4px' }}>Fee Reminder</div>
+                             <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>You have an outstanding balance of ₹{((user?.courseFee || 28000) - (user?.paidFee || 0)).toLocaleString()}. Please complete your payment.</div>
+                           </div>
+                           <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-secondary)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                             Due Now <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
+                           </div>
+                        </div>
+                      )}
+                      
+                      <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--card-bg)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                         <div style={{ padding: '8px', backgroundColor: 'var(--bg-hover)', borderRadius: '50%', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                           <Users style={{ width: '20px', height: '20px', color: '#1e293b' }} />
+                         </div>
+                         <div style={{ flex: 1 }}>
+                           <div style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '14px', marginBottom: '4px' }}>Attendance Update</div>
+                           <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Your recent attendance has been logged successfully. Maintain above 85% to appear for exams.</div>
+                         </div>
+                         <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-secondary)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                           2h ago <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Today's Classes */}
+                  <div className="uxer-table-card" style={{ padding: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Calendar style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} /> Today's Classes
+                      </h3>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        View Timetable <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
+                      </div>
+                    </div>
+
+                    {mySchedules.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                        {mySchedules.map((schedule) => (
+                          <div key={schedule.id} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <h4 style={{ fontWeight: 'bold', color: 'var(--text-main)', margin: 0, fontSize: '16px' }}>{schedule.courseName}</h4>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                              <User style={{ width: '16px', height: '16px' }} /> Inst: {schedule.staffName}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                              <Clock style={{ width: '16px', height: '16px' }} /> {schedule.classTiming}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '24px', textAlign: 'center', border: '1px solid var(--border-color)', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '24px', justifyContent: 'center' }}>
+                        <Calendar style={{ width: '48px', height: '48px', color: 'var(--text-secondary)' }} />
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ color: 'var(--text-main)', fontWeight: 'bold', marginBottom: '4px' }}>No classes scheduled for today.</div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Enjoy your day! 🌟</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column (Sidebar) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  {/* Profile Details */}
+                  <div className="uxer-table-card" style={{ padding: '24px' }}>
+                    <h3 style={{ margin: '0 0 24px 0', fontSize: '18px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+                      <UserCircle style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} /> Profile Details
+                    </h3>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', padding: '16px 0', borderBottom: '1px solid var(--border-color)' }}>
+                        <Mail style={{ width: '20px', height: '20px', marginTop: '2px', color: 'var(--text-secondary)', flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '2px' }}>Email Address</div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email || 'coderkarthik01@gmail.com'}</div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', padding: '16px 0', borderBottom: '1px solid var(--border-color)' }}>
+                        <Building style={{ width: '20px', height: '20px', marginTop: '2px', color: 'var(--text-secondary)', flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '2px' }}>Organization</div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.organizationName || 'AASC'}</div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', padding: '16px 0', borderBottom: '1px solid var(--border-color)' }}>
+                        <Key style={{ width: '20px', height: '20px', marginTop: '2px', color: 'var(--text-secondary)', flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '2px' }}>Enrollment No.</div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.enrollmentNo || '154'}</div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', paddingTop: '16px' }}>
+                        <User style={{ width: '20px', height: '20px', marginTop: '2px', color: 'var(--text-secondary)', flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '2px' }}>Date of Birth & Gender</div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.dob || '2006-07-20'} | {user?.gender || 'Male'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 
-        <div className="bg-gradient-to-r from-green-500 to-teal-500 rounded-3xl p-8 text-white shadow-lg mb-8 relative overflow-hidden">
-          <div className="absolute right-0 top-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-          <div className="relative z-10 flex flex-col md:flex-row items-center gap-8 justify-between">
-            <div className="flex flex-col sm:flex-row items-center justify-start text-left w-full gap-6">
-              <label htmlFor="header-profile-upload" style={{ cursor: 'pointer', transition: 'opacity 0.2s', display: 'inline-block' }} onMouseOver={(e) => e.currentTarget.style.opacity = '0.8'} onMouseOut={(e) => e.currentTarget.style.opacity = '1'}>
-                {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
-                  <img src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" onClick={() => document.getElementById('header-profile-upload').click()} style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', cursor: 'pointer' }} />
-                ) : (
-                  <div onClick={() => document.getElementById('header-profile-upload').click()} style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#ffffff', color: 'var(--green-600, #16a34a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px', fontWeight: 'bold', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', cursor: 'pointer' }}>
-                    {user?.name?.charAt(0).toUpperCase()}
-                  </div>
-                )}
-              </label>
-              <input 
-                type="file" 
-                id="header-profile-upload" 
-                style={{ display: 'none' }} 
-                accept="image/*" 
-                onChange={(e) => {
-                  if(e.target.files && e.target.files.length > 0) {
-                    const confirmChange = window.confirm("Are you sure you want to change your profile picture?");
-                    if (!confirmChange) {
-                      e.target.value = null;
-                      return;
-                    }
-                    handleDocumentUpload(e.target.files[0], 'profilePhotoUrl');
-                  }
-                }} 
-              />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px', verticalAlign: 'middle', marginBottom: '0.25rem' }}>
-                  <h2 className="text-3xl m-0 student-profile-name" style={{ color: 'var(--text-primary-crisp)', textShadow: 'none' }}>{user?.name}</h2>
-                </div>
-                <p className="student-profile-org m-0">Organization: {user?.organizationName}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {activeTab === 'dashboard' && (
-          <div className="student-dashboard-content-wrapper flex flex-col w-full">
-            {/* Today's Classes Widget */}
-            <div className="rounded-2xl p-6 border shadow-sm mb-6" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-              <h3 className="m-0 mb-4 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-                <Calendar className="w-5 h-5 text-indigo-500" /> Today's Classes
-              </h3>
-              {mySchedules.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {mySchedules.map((schedule) => (
-                    <div key={schedule.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl flex flex-col gap-2 shadow-[0_2px_4px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] transition-shadow">
-                      <h4 className="font-bold text-indigo-900 m-0 text-lg">{schedule.courseName}</h4>
-                      <div className="flex items-center gap-2 text-slate-700 text-sm font-medium">
-                        <User className="w-4 h-4 text-slate-400" /> Instructor: {schedule.staffName}
-                      </div>
-                      <div className="flex items-center gap-2 text-slate-700 text-sm font-medium mt-1">
-                        <Clock className="w-4 h-4 text-slate-400" /> {schedule.classTiming}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100 font-medium">
-                  No classes scheduled for today.
-                </div>
-              )}
-            </div>
-
-            <div className="student-expanded-layout">
-            <div className={`rounded-2xl p-6 border shadow-sm ${isBirthday ? 'birthday-bloom-effect' : ''}`} style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-            <h3 className="m-0 mb-4 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-              <User className="w-5 h-5 text-green-500" /> Profile Details
-            </h3>
-            <div className="student-profile-details">
-              <div className="student-profile-item">
-                <Mail className="w-5 h-5 text-slate-400 mt-0.5" />
-                <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Email Address</div>
-                  <div className="text-slate-800 font-medium">{user?.email}</div>
-                </div>
-              </div>
-              <div className="student-profile-item">
-                <Building className="w-5 h-5 text-slate-400 mt-0.5" />
-                <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Organization</div>
-                  <div className="text-slate-800 font-medium">{user?.organizationName}</div>
-                </div>
-              </div>
-              <div className="student-profile-item">
-                <Key className="w-5 h-5 text-slate-400 mt-0.5" />
-                <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Enrollment No.</div>
-                  <div className="text-slate-800 font-medium">{user?.enrollmentNo || 'N/A'}</div>
-                </div>
-              </div>
-              <div className="student-profile-item">
-                <User className="w-5 h-5 text-slate-400 mt-0.5" />
-                <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">DOB & Gender</div>
-                  <div className="text-slate-800 font-medium">{user?.dob || 'N/A'} | {user?.gender || 'N/A'}</div>
-                </div>
-              </div>
-              <div className="student-profile-item">
-                <Key className="w-5 h-5 text-slate-400 mt-0.5" />
-                <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Organization Access ID</div>
-                  <div className="text-slate-800 font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-sm">{user?.organizationAccessId}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl p-6 border shadow-sm flex flex-col justify-center min-h-[300px]" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-            <h3 className="m-0 mb-4 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-              <BookOpen className="w-5 h-5 text-teal-500" /> Assigned Course
-            </h3>
-            {assignment ? (
-              <div className="flex flex-col gap-4 text-left">
-                <div className="p-4 bg-teal-50 border border-teal-100 rounded-xl flex justify-between items-center flex-wrap gap-4">
-                  <div>
-                    <h3 className="text-teal-900 font-bold text-xl mb-1 flex items-center gap-2">
-                      <BookOpen className="w-5 h-5 text-teal-600" />
-                      {assignment.courseName}
-                    </h3>
-                    <div className="flex items-center gap-2 text-teal-700 font-medium">
-                      <User className="w-4 h-4" /> Instructor: {assignment.staffName}
-                    </div>
-                  </div>
-                  {assignment.liveSessionActive && assignment.liveRoomName && (
-                    <button 
-                      onClick={() => window.open(`https://meet.jit.si/${assignment.liveRoomName}`, '_blank')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', backgroundColor: 'var(--red-500, #ef4444)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                    >
-                      <Video className="w-5 h-5 animate-pulse" /> Join Live Class
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-3">
-                    <Clock className="w-5 h-5 text-indigo-500 mt-0.5" />
-                    <div>
-                      <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Timings</div>
-                      <div className="text-slate-800 font-medium text-sm">{assignment.classTiming}</div>
-                    </div>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-start gap-3">
-                    <Calendar className="w-5 h-5 text-orange-500 mt-0.5" />
-                    <div>
-                      <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Dates</div>
-                      <div className="text-slate-800 font-medium text-sm">{assignment.startDate} to {assignment.endDate}</div>
-                    </div>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setActiveTab('course')}
-                  className="w-full p-3 mt-4 text-white bg-teal-600 hover:bg-teal-700 transition-colors border-none rounded-lg font-bold cursor-pointer shadow-sm"
-                >
-                  Go to Course Materials
-                </button>
-              </div>
-            ) : (
-              <div className="text-center student-no-course-placeholder">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
-                  <BookOpen className="w-8 h-8 text-slate-300" />
-                </div>
-                <h3 className="text-slate-600 font-medium mb-1">No course assigned yet</h3>
-                <p className="text-slate-400 text-sm">Your admin will assign you to a specific batch and schedule soon.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    )}
-
         {activeTab === 'fee' && (
-          <div className="rounded-2xl p-6 border shadow-sm w-full max-w-4xl mx-auto" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+          <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
               <CreditCard className="w-5 h-5 text-indigo-500" /> Fee Management
             </h3>
@@ -568,7 +573,7 @@ This is an automatically generated receipt.
                   ))}
                 </div>
               ) : (
-                <div className="text-center p-8 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
+                <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
                   <Receipt className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-lg">No payment history found.</p>
                 </div>
@@ -578,7 +583,7 @@ This is an automatically generated receipt.
         )}
 
         {activeTab === 'documents' && (
-          <div className="rounded-2xl p-6 border shadow-sm w-full max-w-4xl mx-auto" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+          <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
               <FolderOpen className="w-5 h-5 text-indigo-500" /> Document Center
             </h3>
@@ -635,7 +640,7 @@ This is an automatically generated receipt.
         )}
 
         {activeTab === 'course' && (
-          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Course Materials</h2>
             {assignment ? (
               <>
@@ -683,14 +688,14 @@ This is an automatically generated receipt.
                     )}
                   </div>
                 ) : (
-                  <div className="mt-8 text-center p-8 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
+                  <div className="mt-8 text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
                     <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                     <p className="text-lg">No content materials provided yet.</p>
                   </div>
                 )}
               </>
             ) : (
-              <div className="text-center p-8 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100">
                 <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
                 <h3 className="text-slate-600 font-medium text-lg mb-1">No course assigned yet</h3>
                 <p className="text-slate-400">Your admin will assign you to a specific batch and schedule soon.</p>
@@ -723,7 +728,7 @@ This is an automatically generated receipt.
         )}
 
         {activeTab === 'settings' && (
-          <div className="rounded-2xl p-6 border shadow-sm w-full max-w-4xl mx-auto" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+          <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
               <Settings className="w-5 h-5 text-indigo-500" /> Account Settings
             </h3>
@@ -748,11 +753,11 @@ This is an automatically generated receipt.
             }} className="flex flex-col gap-4 max-w-md">
               <div>
                 <label className="settings-form-label">Full Name</label>
-                <input type="text" name="name" defaultValue={user?.name} required />
+                <input type="text" name="name" defaultValue={user?.name} required  className="saas-v3-form-input"/>
               </div>
               <div>
                 <label className="settings-form-label">Gender</label>
-                <select name="gender" defaultValue={user?.gender}>
+                <select name="gender" defaultValue={user?.gender} className="saas-v3-form-select">
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                   <option value="Other">Other</option>
@@ -760,7 +765,7 @@ This is an automatically generated receipt.
               </div>
               <div>
                 <label className="settings-form-label">Date of Birth</label>
-                <input type="date" name="dob" defaultValue={user?.dob} required />
+                <input type="date" name="dob" defaultValue={user?.dob} required  className="saas-v3-form-input"/>
               </div>
               <div className="mt-4">
                 <button type="submit" className="settings-save-btn">Save Changes</button>
@@ -773,7 +778,7 @@ This is an automatically generated receipt.
         {/* Digital Bill Modal */}
         {isBillModalVisible && selectedBill && (
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="custom-modal-viewport-card" style={{ backgroundColor: '#fff', color: '#333', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '0', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
               
               {/* Elegant Bill Header */}
               <div style={{ padding: '24px', backgroundColor: 'var(--blue-50, #eff6ff)', borderBottom: '2px dashed var(--border-color, #e2e8f0)', textAlign: 'center', position: 'relative' }}>

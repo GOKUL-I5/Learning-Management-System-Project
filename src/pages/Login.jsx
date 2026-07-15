@@ -113,35 +113,33 @@ const Login = () => {
   };
 
   return (
-    <div className="login-container">
-      <div className="login-card">
+    <div className="saas-v3-auth-page">
+      <div className="saas-v3-auth-card">
         
-        <div className="login-logo-wrapper">
-          <div className="login-logo">
-            <BookOpen className="w-8 h-8 login-icon" />
+        <div className="saas-v3-auth-logo-container">
+          <div style={{ width: '48px', height: '48px', backgroundColor: '#f1f5f9', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <BookOpen style={{ color: '#111827', width: '24px', height: '24px' }} />
           </div>
         </div>
         
-        <h1 className="login-title">LMS Portal</h1>
-        <p className="login-subtitle">Education Empowered</p>
-        <div className="login-quote">
-          "The beautiful thing about learning is that no one can take it away from you."<br/><span style={{ fontSize: '0.8rem', opacity: 0.7 }}>— B.B. King</span>
-        </div>
+        <h1 className="saas-v3-auth-title">LMS Portal</h1>
+        <p className="saas-v3-auth-subtitle">Education Empowered</p>
 
-        {errorMsg && <div style={{ color: 'var(--danger-vibrant, #ef4444)', padding: '10px', marginBottom: '10px', textAlign: 'center', fontWeight: 'bold', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px' }}>{errorMsg}</div>}
-        {successMsg && <div style={{ color: 'var(--success-vibrant, #10b981)', padding: '10px', marginBottom: '10px', textAlign: 'center', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '8px' }}>{successMsg}</div>}
+        {errorMsg && <div style={{ color: '#ef4444', padding: '12px', marginBottom: '16px', textAlign: 'center', fontWeight: '500', backgroundColor: '#fef2f2', borderRadius: '8px', fontSize: '14px', border: '1px solid #fecaca' }}>{errorMsg}</div>}
+        {successMsg && <div style={{ color: '#10b981', padding: '12px', marginBottom: '16px', textAlign: 'center', fontWeight: '500', backgroundColor: '#ecfdf5', borderRadius: '8px', fontSize: '14px', border: '1px solid #a7f3d0' }}>{successMsg}</div>}
 
         <form onSubmit={handleNext} style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
-          <div className="login-form-group">
+          <div className="saas-v3-form-group">
+            <label className="saas-v3-form-label">Phone Number</label>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <Phone style={{ position: 'absolute', left: '12px', color: 'var(--text-muted-gray)' }} size={18} />
+              <Phone style={{ position: 'absolute', left: '16px', color: '#9ca3af' }} size={18} />
               <input 
                 type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="Enter your Phone Number" 
-                className="login-input" 
-                style={{ paddingLeft: '40px', border: '1px solid var(--border-color)', backgroundColor: 'var(--panel-solid-white)', color: 'var(--text-primary-crisp)', boxSizing: 'border-box' }}
+                className="saas-v3-form-input" 
+                style={{ paddingLeft: '44px' }}
                 required
               />
             </div>
@@ -150,24 +148,24 @@ const Login = () => {
           <button 
             type="submit" 
             disabled={loading} 
-            className="login-btn-primary"
-            style={{ cursor: loading ? 'not-allowed' : 'pointer', border: 'none' }}
+            className="saas-v3-btn-solid"
+            style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px', marginTop: '8px' }}
           >
-            {loading ? 'Please wait...' : <>Continue <ArrowRight size={18} style={{ marginLeft: '8px' }} /></>}
+            {loading ? 'Please wait...' : <>Continue <ArrowRight size={18} style={{ marginLeft: '4px' }} /></>}
           </button>
           
-          <div className="login-divider">
-            <div className="login-divider-line"></div>
-            <div className="login-divider-text">Or</div>
-            <div className="login-divider-line"></div>
+          <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0' }}>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }}></div>
+            <div style={{ padding: '0 16px', color: '#9ca3af', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase' }}>Or</div>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }}></div>
           </div>
           
           <button 
             type="button"
             onClick={handleGoogleLogin} 
             disabled={loading} 
-            className="login-btn-google"
-            style={{ cursor: loading ? 'not-allowed' : 'pointer' }}
+            className="saas-v3-btn-outline"
+            style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px' }}
           >
             <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
               <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
