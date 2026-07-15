@@ -1,26 +1,29 @@
 :root {
   /* Premium SaaS Color Palette (High-Contrast Upgrade) */
-  --theme-bg-premium: #f8f9fa;
+  --theme-bg-premium: #f9f9f9;
   --panel-solid-white: #ffffff;
-  --text-primary-crisp: #1e293b;
-  --text-muted-gray: #64748b;
-  --accent-royal-purple: #5c59e8;
-  --accent-hover-tint: #4d4ae0;
-  --danger-vibrant: #ef4444;
-  --success-vibrant: #10b981;
+  --text-primary-crisp: #1a1c1c;
+  --text-muted-gray: #6e7a73;
+  --accent-royal-purple: #006c4e;
+  --accent-hover-tint: #00503a;
+  --danger-vibrant: #ba1a1a;
+  --success-vibrant: #88e5be;
   --warning-amber: #f59e0b;
 
   /* Premium SaaS Color Palette (Image Match) */
-  --color-primary: #6366F1; /* Indigo purple */
-  --color-secondary: #818CF8;
-  --color-accent: #14B8A6;
-  --color-success: #22C55E;
-  --color-warning: #F59E0B;
-  --color-danger: #EF4444;
+  --color-primary: #006c4e;
+  /* Indigo purple */
+  --color-secondary: #5b5f5c;
+  --color-accent: #006c4e;
+  --color-success: #88e5be;
+  --color-warning: #f59e0b;
+  --color-danger: #ba1a1a;
 
-  --color-bg: #F3F4F6; /* Light gray body background */
+  --color-bg: #F3F4F6;
+  /* Light gray body background */
   --color-surface: #FFFFFF;
-  --color-border: #F3F4F6; /* Extremely soft borders */
+  --color-border: #F3F4F6;
+  /* Extremely soft borders */
 
   --color-text-primary: #111827;
   --color-text-secondary: #6B7280;
@@ -57,11 +60,11 @@
 }
 
 [data-theme="dark"] {
-  --color-bg: #0F172A;
-  --color-surface: #1E293B;
-  --color-border: #334155;
+  --color-bg: #121212;
+  --color-surface: #1f1f1f;
+  --color-border: #52565b;
   --color-text-primary: #F8FAFC;
-  --color-text-secondary: #94A3B8;
+  --color-text-secondary: #9fa5ac;
 
   --text-main: var(--color-text-primary);
   --text-secondary: var(--color-text-secondary);
@@ -75,33 +78,39 @@
 .global-responsive-scroll-wrapper {
   width: 100%;
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch; /* Ensures smooth native physics scrolling on iOS/Android */
+  -webkit-overflow-scrolling: touch;
+  /* Ensures smooth native physics scrolling on iOS/Android */
   margin-bottom: 1rem;
 }
+
 .custom-inline-ledger-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-width: 950px; /* Prevents text wrapping or clashing on small mobile viewports */
+  min-width: 950px;
+  /* Prevents text wrapping or clashing on small mobile viewports */
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
 }
+
 @media (max-width: 768px) {
   .custom-modal-viewport-card {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 94%; /* Spans gracefully edge-to-edge on phone screens */
+    width: 94%;
+    /* Spans gracefully edge-to-edge on phone screens */
     max-width: 480px;
     max-height: 88vh;
     overflow-y: auto;
     border-radius: 12px;
     padding: 16px;
     background: var(--card-bg);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
     z-index: 2000;
   }
+
   /* Stack nested layout options neatly on mobile */
   .modal-flex-layout-group {
     display: flex;
@@ -112,21 +121,26 @@
 
 .main-dashboard-layout-wrapper {
   display: grid;
-  grid-template-columns: 260px 1fr; /* Sidebar locked at 260px, content takes exactly 1fr remaining space on laptop */
+  grid-template-columns: 260px 1fr;
+  /* Sidebar locked at 260px, content takes exactly 1fr remaining space on laptop */
   width: 100%;
   min-height: 100vh;
   box-sizing: border-box;
 }
+
 .main-content-display-pane {
-  display: block !important; /* Prevents the inner features from disappearing or dropping to 0px width */
+  display: block !important;
+  /* Prevents the inner features from disappearing or dropping to 0px width */
   padding: 24px;
   width: 100%;
   overflow-y: auto;
 }
+
 @media (max-width: 768px) {
   .main-dashboard-layout-wrapper {
     display: flex;
-    flex-direction: column; /* Gracefully shifts to full-width phone views only on mobile screen widths */
+    flex-direction: column;
+    /* Gracefully shifts to full-width phone views only on mobile screen widths */
   }
 }
 
@@ -138,6 +152,7 @@
   gap: 16px;
   width: 100%;
 }
+
 @media (max-width: 768px) {
   .header-flex-group {
     flex-direction: column;

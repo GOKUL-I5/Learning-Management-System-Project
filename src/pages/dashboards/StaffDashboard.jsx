@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { createStudent, logoutUser, getOrganizationStudents, deleteUserDoc, updateUserDoc, getStaffAssignments, updateCourseAssignment, getOrganizationDetails, saveAttendanceHistory, getAttendanceHistoryByFaculty, createReceipt, listenToOrganizationStatus, logTransaction, getOrganizationCourses, addStudentMarks } from '../../firebase/services';
-import { LogOut, Calendar as CalendarIcon, Clock, Users, BookOpen, ChevronRight, Upload as UploadIcon, FileText, ClipboardList, Pencil, Download, CheckCircle, XCircle, GraduationCap, UploadCloud, FileSpreadsheet, Calendar, Video, ArrowLeft, Mic, MicOff, Monitor, Paperclip, CheckCircle2, Trash2, ChevronDown, UserCheck, AlertCircle, Banknote, Search, Award } from 'lucide-react';
+import { LogOut, Calendar as CalendarIcon, Clock, Users, BookOpen, ChevronRight, Upload as UploadIcon, FileText, ClipboardList, Pencil, Download, CheckCircle, XCircle, GraduationCap, UploadCloud, FileSpreadsheet, Calendar, Video, ArrowLeft, Mic, MicOff, Monitor, Paperclip, CheckCircle2, Trash2, ChevronDown, UserCheck, AlertCircle, Banknote, Search, Award, Filter, ArrowDownUp, Moon, Bell } from 'lucide-react';
 import Papa from 'papaparse';
 import './StaffDashboard.css';
 
@@ -586,74 +586,75 @@ const StaffDashboard = () => {
   const activeBatchStudents = selectedBatch ? studentList.filter(s => s.course === selectedBatch.courseName) : [];
 
   return (
-    <div className="main-dashboard-layout-wrapper" style={{ display: 'flex', flexDirection: 'row', height: '100vh', overflow: 'hidden', backgroundColor: 'var(--bg-main)', color: 'var(--text-main-dark)' }}>
-      <style>{`
-        input.search-bar-input[type="text"], div.search-bar-wrapper > input[type="text"] { padding-left: 46px !important; }
-        div.search-bar-wrapper > svg.search-bar-icon, svg.search-bar-icon { position: absolute !important; left: 14px !important; top: 50% !important; transform: translateY(-50%) !important; pointer-events: none !important; color: #6b7280 !important; z-index: 10 !important; }
-        div.search-bar-wrapper { position: relative !important; display: flex !important; align-items: center !important; }
-      `}</style>
+    <div className="uxer-layout">
       {/* Sidebar Navigation */}
-      <aside className="flex flex-col h-full overflow-y-auto w-[260px] shrink-0" style={{ backgroundColor: 'var(--card-bg-clean)' }}>
-        <div className="flex flex-col items-center justify-center p-6 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center justify-center w-24 h-24 rounded-full border-2 overflow-hidden" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-hover)' }}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="Org Logo" className="w-full h-full object-contain p-2" />
-            ) : (
-              <Users className="w-12 h-12 text-blue-600" />
-            )}
-          </div>
-          <h4 className="mt-4 text-sm font-bold text-center" style={{ color: 'var(--text-main)' }}>Faculty Dashboard</h4>
+      <aside className="uxer-sidebar">
+        <div className="uxer-sidebar-logo">
+          <div className="logo-icon"></div>
+          <span style={{ fontSize: '24px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px' }}>Faculty</span>
+        </div>
+        
+        <div className="uxer-sidebar-menu">
+          <div className="uxer-sidebar-category">MAIN MENU</div>
+          <div onClick={() => setActiveTab('1')} className={`uxer-sidebar-item ${activeTab === '1' ? 'active' : ''}`}><CalendarIcon style={{ width: '20px', height: '20px' }} /> Dashboard</div>
+          <div onClick={() => setActiveTab('3')} className={`uxer-sidebar-item ${activeTab === '3' ? 'active' : ''}`}><Users style={{ width: '20px', height: '20px' }} /> Manage Students</div>
+          <div onClick={() => setActiveTab('4')} className={`uxer-sidebar-item ${activeTab === '4' ? 'active' : ''}`}><Calendar style={{ width: '20px', height: '20px' }} /> My Schedule</div>
+          <div onClick={() => setActiveTab('5')} className={`uxer-sidebar-item ${activeTab === '5' ? 'active' : ''}`}><ClipboardList style={{ width: '20px', height: '20px' }} /> Attendance Management</div>
+          <div onClick={() => setActiveTab('6')} className={`uxer-sidebar-item ${activeTab === '6' ? 'active' : ''}`}><Award style={{ width: '20px', height: '20px' }} /> Marks Portal</div>
         </div>
 
-        <nav className="flex-1 py-4 px-4">
-          <ul className="flex flex-col gap-2 list-none p-0 m-0">
-            <li 
-              onClick={() => setActiveTab('3')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '3' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '3' ? 'var(--color-primary)' : 'transparent', color: activeTab === '3' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Users className="w-5 h-5" /> Manage Students</li>
-
-            <li 
-              onClick={() => setActiveTab('4')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '4' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '4' ? 'var(--color-primary)' : 'transparent', color: activeTab === '4' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Calendar className="w-5 h-5" /> My Schedule</li>
-            <li 
-              onClick={() => setActiveTab('5')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '5' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '5' ? 'var(--color-primary)' : 'transparent', color: activeTab === '5' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><ClipboardList className="w-5 h-5" /> Attendance Management</li>
-            <li 
-              onClick={() => setActiveTab('6')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '6' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '6' ? 'var(--color-primary)' : 'transparent', color: activeTab === '6' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Award className="w-5 h-5" /> Marks Portal</li>
-          </ul>
-        </nav>
+        <div style={{ padding: '0 8px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#666666', fontSize: '14px', fontWeight: '500' }}>
+            <Moon style={{ width: '20px', height: '20px' }} /> Dark mode
+          </div>
+          <div style={{ width: '36px', height: '20px', backgroundColor: '#111111', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
+            <div style={{ width: '16px', height: '16px', backgroundColor: '#FFFFFF', borderRadius: '50%', position: 'absolute', top: '2px', right: '2px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}></div>
+          </div>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex flex-col h-full flex-1 main-content-display-pane">
-        {/* Header Banner */}
-        <header className="sticky top-0 z-10 flex justify-between items-center px-8 py-6 flex-wrap gap-4" style={{ backgroundColor: 'var(--panel-solid-white)', borderBottom: '1px solid var(--border-color)' }}>
-          <div className="flex items-center gap-3">
-            <h1 className="m-0 text-lg font-bold" style={{ color: 'var(--text-primary-crisp)' }}>Faculty Dashboard</h1>
+      <main className="uxer-main">
+        <header className="uxer-header">
+          <div className="uxer-header-left">
+            <div className="org-text" style={{ textTransform: 'uppercase' }}>{user?.organizationName || 'Organization'}</div>
+            <h1>Faculty Portal</h1>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex flex-col items-end gap-1">
-              <div className="text-sm font-bold" style={{ color: 'var(--text-primary-crisp)' }}>{user?.name || 'Faculty'}</div>
-              <div className="text-xs font-bold" style={{ color: 'var(--text-muted-gray)' }}>
-                Organization: <span style={{ color: 'var(--accent-royal-purple)' }}>{user?.organizationName}</span>
+          <div className="uxer-header-right">
+            <div className="uxer-search">
+              <Search style={{ width: '16px', height: '16px', color: '#999', flexShrink: 0 }} />
+              <input type="text" placeholder="Search" />
+              <div className="uxer-shortcut">&#8984; F</div>
+            </div>
+            
+            <button style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
+              <Bell style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
+              <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', backgroundColor: 'var(--text-main)', borderRadius: '50%', border: '2px solid var(--card-bg)' }}></span>
+            </button>
+            <div style={{ height: '32px', width: '1px', backgroundColor: 'var(--border-color)', margin: '0 8px' }}></div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', flexShrink: 0 }}>
+              {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
+                <img src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                  {user?.name?.charAt(0).toUpperCase() || 'F'}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Organization: {user?.organizationName}</span>
               </div>
             </div>
-            <button onClick={logoutUser} className="top-logout-btn flex items-center gap-2">
-              <LogOut className="w-4 h-4" /> Logout
+            
+            <button onClick={logoutUser} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }} title="Logout">
+              <LogOut style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
             </button>
           </div>
         </header>
 
         {/* Content Wrapper */}
-        <div className="p-6 w-full max-w-6xl mx-auto box-border">
+        <div style={{ padding: '32px 48px', overflowY: 'auto' }}>
 
       {isProfileModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -669,7 +670,7 @@ const StaffDashboard = () => {
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <span style={{ fontSize: '24px', fontWeight: 'bold' }}>{selectedStudentForProfile?.name}</span>
-                <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>{selectedStudentForProfile?.course || 'No Course'}</span>
+                <span style={{ fontSize: '14px', color: '#64748b' }}>{selectedStudentForProfile?.course || 'No Course'}</span>
               </div>
             </div>
             
@@ -690,7 +691,7 @@ const StaffDashboard = () => {
                     window.open(selectedStudentForProfile.documents.idProofUrl, '_blank');
                   }}>View Document</button>
                 ) : (
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '14px', backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '12px' }}>Pending Upload</span>
+                  <span style={{ color: '#64748b', fontSize: '14px', backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '12px' }}>Pending Upload</span>
                 )}
               </div>
             </div>
@@ -704,7 +705,7 @@ const StaffDashboard = () => {
       
       {isAddStudentModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Add Student</h2>
               <button onClick={() => setIsAddStudentModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted-gray)' }}><XCircle size={24} /></button>
@@ -796,7 +797,7 @@ const StaffDashboard = () => {
                   <strong>Instructions:</strong> Please upload a CSV file with columns <code>Name</code>, <code>Email</code>, <code>Gender</code>, <code>DOB</code>, <code>DateOfJoining</code>, <code>EnrollmentNo</code>, <code>Course</code>, <code>CourseFee</code>, <code>StudentPhone</code>, <code>ParentPhone</code>, <code>Status</code>.
                 </div>
                 <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ width: '100%', padding: '40px', backgroundColor: '#ffffff', border: '2px dashed var(--border-color)', borderRadius: '16px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.3s' }}>
+                  <div style={{ width: '100%', padding: '24px', backgroundColor: '#ffffff', border: '2px dashed var(--border-color)', borderRadius: '16px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.3s' }}>
                     <input type="file" accept=".csv" onChange={(e) => { if(e.target.files.length) processCSV(e.target.files[0]); }} disabled={uploading} style={{ display: 'none' }} id="csv-upload" />
                     <label htmlFor="csv-upload" style={{ cursor: 'pointer', display: 'block' }}>
                       <div style={{ width: '56px', height: '56px', color: 'var(--blue-500, #3b82f6)', margin: '0 auto 16px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -817,154 +818,152 @@ const StaffDashboard = () => {
 
       <div style={{ padding: '24px', width: '100%', boxSizing: 'border-box' }}>
                   {activeTab === '3' && (
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden w-full">
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Students</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #22c55e', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #3b82f6', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Completed</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Completed').length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #ef4444', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Drop-out</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Drop-out').length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #64748b', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Inactive</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Inactive').length}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-                      <h3 style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--text-primary-crisp, #0f172a)', margin: 0 }}>Student Roster</h3>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <button type="button" onClick={() => { setGlobalSearchAction('edit'); setGlobalSearchModalVisible(true); }} style={{ padding: '10px 20px', backgroundColor: 'transparent', color: 'var(--accent-royal-purple, #6366f1)', border: '2px solid var(--accent-royal-purple, #6366f1)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-royal-purple, #6366f1)'; e.currentTarget.style.color = '#fff'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--accent-royal-purple, #6366f1)'; }}>
-                          Edit Student
-                        </button>
-                        <button type="button" onClick={() => setIsAddStudentModalVisible(true)} style={{ padding: '10px 20px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.2)' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--blue-600, #2563eb)'}>
-                          Add Student
-                        </button>
-                      </div>
-                    </div>
-                    <div className="w-full overflow-x-auto">
-                    <div className="w-full">
-                      {/* Filter Controls Row */}
-                      <div style={{ display: 'flex', gap: '16px', padding: '16px', backgroundColor: 'var(--theme-bg-premium)', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <div className="search-bar-wrapper" style={{ flex: 1 }}>
-                          <Search className="search-bar-icon" />
-                          <input 
-                            className="search-bar-input"
-                            type="text" 
-                            placeholder="Search by Student Name or Enrollment Number..." 
-                            value={studentTextSearch}
-                            onChange={(e) => setStudentTextSearch(e.target.value)}
-                            style={{ width: '100%', padding: '10px 10px 10px 40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '14px', backgroundColor: 'var(--panel-solid-white)', color: 'var(--text-primary-crisp)', outline: 'none' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <select value={studentAgeFilter} onChange={(e) => setStudentAgeFilter(e.target.value)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--panel-solid-white)', color: 'var(--text-primary-crisp)', fontWeight: 'bold', minWidth: '150px', outline: 'none', cursor: 'pointer' }}>
-                            <option value="All">All Ages</option>
-                            <option value="Under 18">Under 18</option>
-                            <option value="18-24">18 - 24</option>
-                            <option value="25-30">25 - 30</option>
-                            <option value="30+">30+</option>
-                          </select>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <select value={studentCourseFilter} onChange={(e) => setStudentCourseFilter(e.target.value)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--panel-solid-white)', color: 'var(--text-primary-crisp)', fontWeight: 'bold', minWidth: '150px', outline: 'none', cursor: 'pointer' }}>
-                            <option value="All">All Courses</option>
-                            {courseList.map(course => (
-                              <option key={course.id || course.name} value={course.name}>{course.name}</option>
-                            ))}
-                          </select>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  <div className="uxer-stats-grid">
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">TOTAL STUDENTS</div>
+                      <div className="uxer-stat-content">
+                        <div className="uxer-stat-value">{studentList.length}</div>
+                        <div className="uxer-stat-badge">
+                          <span className="uxer-stat-badge-text">vs last month</span>
+                          <div className="uxer-stat-badge-pill green">+{studentList.length}</div>
                         </div>
                       </div>
-
-                      <div style={{ width: '100%', overflowX: 'auto', backgroundColor: 'var(--panel-solid-white)' }}>
-                        <table style={{ width: '100%', minWidth: '950px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                          <thead style={{ backgroundColor: 'var(--theme-bg-premium)', borderBottom: '2px solid var(--border-color)' }}>
-                            <tr>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase' }}>Name</th>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase' }}>Course</th>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase' }}>Status</th>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase' }}>Fees Status</th>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase' }}>Gmail</th>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase' }}>Phone Number</th>
-                              <th style={{ padding: '16px', color: 'var(--text-muted-gray)', fontSize: '12px', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredStudentList(studentList)
-                              .map(student => {
-                              const courseFee = student.courseFee || 28000;
-                              const paid = student.paidFee || 0;
-                              const feeStatus = (courseFee - paid) <= 0 ? 'Paid' : 'Pending';
-                              const feeBg = feeStatus === 'Paid' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-                              const feeColor = feeStatus === 'Paid' ? '#22c55e' : 'var(--danger-vibrant)';
-                              const status = student.currentStatus || 'Active';
-                              const statusBg = status === 'Active' ? 'rgba(92, 89, 232, 0.1)' : 'rgba(100, 116, 139, 0.1)';
-                              const statusColor = status === 'Active' ? 'var(--accent-royal-purple)' : 'var(--text-muted-gray)';
-                              return (
-                                <tr key={student.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s', backgroundColor: 'var(--panel-solid-white)' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--panel-solid-white)'}>
-                                  <td style={{ padding: '16px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                      {student.documents?.profilePhotoUrl || student.photoUrl ? (
-                                        <img src={student.documents?.profilePhotoUrl || student.photoUrl} alt="Avatar" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-color)' }} />
-                                      ) : (
-                                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--accent-royal-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px', border: '1px solid var(--border-color)' }}>
-                                          {student.name?.charAt(0).toUpperCase()}
-                                        </div>
-                                      )}
-                                      <div>
-                                        <div style={{ fontWeight: 'bold', color: 'var(--text-primary-crisp)', fontSize: '15px' }}>{student.name}</div>
-                                        <div style={{ fontSize: '12px', color: 'var(--text-muted-gray)', marginTop: '2px' }}>ID: {student.enrollmentNo || student.id.substring(0,6).toUpperCase()}</div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td style={{ padding: '16px', color: 'var(--text-primary-crisp)', fontWeight: '600' }}>
-                                    {student.course || 'N/A'}
-                                  </td>
-                                  <td style={{ padding: '16px' }}>
-                                    <span style={{ backgroundColor: statusBg, color: statusColor, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>{status}</span>
-                                  </td>
-                                  <td style={{ padding: '16px' }}>
-                                    <span style={{ backgroundColor: feeBg, color: feeColor, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>{feeStatus}</span>
-                                  </td>
-                                  <td style={{ padding: '16px', color: 'var(--text-primary-crisp)' }}>{student.email || student.gmail || 'N/A'}</td>
-                                  <td style={{ padding: '16px', color: 'var(--text-primary-crisp)' }}>{student.phoneNumber || 'N/A'}</td>
-                                  <td style={{ padding: '16px', textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                      <button 
-                                        onClick={() => { setSelectedStudentForProfile(student); setIsProfileModalVisible(true); }}
-                                        style={{ cursor: 'pointer', padding: '6px 12px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-primary-crisp)', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', transition: 'background-color 0.2s' }}
-                                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--border-color)'}
-                                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'}
-                                      >
-                                        View Docs
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                            {filteredStudentList(studentList).length === 0 && (
-                              <tr>
-                                <td colSpan="7" style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted-gray)' }}>
-                                  No students found matching your filters.
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
+                    </div>
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">ACTIVE STUDENTS</div>
+                      <div className="uxer-stat-content">
+                        <div className="uxer-stat-value">{studentList.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
+                        <div className="uxer-stat-badge">
+                          <span className="uxer-stat-badge-text">vs last month</span>
+                          <div className="uxer-stat-badge-pill green">+0%</div>
+                        </div>
                       </div>
                     </div>
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">DROP-OUTS</div>
+                      <div className="uxer-stat-content">
+                        <div className="uxer-stat-value">{studentList.filter(s => s.currentStatus === 'Drop-out').length}</div>
+                        <div className="uxer-stat-badge">
+                          <span className="uxer-stat-badge-text">needs attention</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">INACTIVE</div>
+                      <div className="uxer-stat-content">
+                        <div className="uxer-stat-value">{studentList.filter(s => s.currentStatus === 'Inactive').length}</div>
+                        <div className="uxer-stat-badge">
+                          <span className="uxer-stat-badge-text">on hold</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
+
+                  <div className="uxer-toolbar">
+                    <div className="uxer-toolbar-left">
+                      <select 
+                        value={studentCourseFilter}
+                        onChange={(e) => setStudentCourseFilter(e.target.value)}
+                        className="uxer-dropdown-btn"
+                        style={{ appearance: 'none', paddingRight: '28px' }}
+                      >
+                        <option value="All">All Courses</option>
+                        {courseList.map(c => <option key={c.id} value={c.title || c.name}>{c.title || c.name}</option>)}
+                      </select>
+                      <select 
+                        value={studentAgeFilter}
+                        onChange={(e) => setStudentAgeFilter(e.target.value)}
+                        className="uxer-dropdown-btn"
+                        style={{ appearance: 'none', paddingRight: '28px' }}
+                      >
+                        <option value="All">All Ages</option>
+                        <option value="Under 18">Under 18</option>
+                        <option value="18-24">18 - 24</option>
+                        <option value="25-30">25 - 30</option>
+                        <option value="30+">30+</option>
+                      </select>
+                      <button className="uxer-dropdown-btn"><Filter className="w-4 h-4" style={{ color: '#999' }} /> Filter</button>
+                    </div>
+                    
+                    <div className="uxer-toolbar-right">
+                      <div className="uxer-search">
+                        <Search className="w-4 h-4" style={{ color: '#999' }} />
+                        <input 
+                          type="text" 
+                          placeholder="Search students..." 
+                          value={studentTextSearch}
+                          onChange={(e) => setStudentTextSearch(e.target.value)}
+                        />
+                        <div className="uxer-shortcut">&#8984; F</div>
+                      </div>
+                      <button type="button" onClick={() => { setGlobalSearchAction('edit'); setGlobalSearchModalVisible(true); }} className="uxer-dropdown-btn" style={{ color: 'var(--uxer-primary)', borderColor: 'var(--uxer-primary)' }}>Edit Student</button>
+                      <button className="uxer-btn-green" onClick={() => setIsAddStudentModalVisible(true)}>+ New Student</button>
+                    </div>
+                  </div>
+
+                  <div className="uxer-table-card">
+                    <table className="uxer-table">
+                      <thead>
+                        <tr>
+                          <th><input type="checkbox" className="saas-v3-table-checkbox saas-v3-form-input" /></th>
+                          <th>Student</th>
+                          <th>Course</th>
+                          <th>Fees Status</th>
+                          <th>Phone</th>
+                          <th>Status</th>
+                          <th>+</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudentList(studentList).slice(0, 50).map(student => {
+                          const courseFee = student.courseFee || 28000;
+                          const paid = student.paidFee || 0;
+                          const feeStatus = (courseFee - paid) <= 0 ? 'Paid' : 'Pending';
+                          return (
+                            <tr key={student.id}>
+                              <td><input type="checkbox" className="saas-v3-table-checkbox saas-v3-form-input" /></td>
+                              <td>
+                                <div className="saas-v3-user-cell">
+                                  {student.documents?.profilePhotoUrl || student.photoUrl ? (
+                                    <img src={student.documents?.profilePhotoUrl || student.photoUrl} alt="Avatar" className="saas-v3-user-avatar" />
+                                  ) : (
+                                    <div className="saas-v3-user-avatar">{student.name?.charAt(0).toUpperCase()}</div>
+                                  )}
+                                  <div style={{display:'flex', flexDirection:'column'}}>
+                                    <span style={{fontWeight:'600'}}>{student.name}</span>
+                                    <span style={{fontSize:'12px', color:'#6b7280'}}>{student.enrollmentNo || student.id.substring(0,6).toUpperCase()}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{student.course || 'N/A'}</td>
+                              <td>
+                                <span className={feeStatus === 'Paid' ? 'saas-v3-badge-green' : 'saas-v3-badge-red'}>
+                                  {feeStatus}
+                                </span>
+                              </td>
+                              <td>{student.phoneNumber || 'N/A'}</td>
+                              <td>
+                                <span className={
+                                  student.currentStatus === 'Active' || !student.currentStatus ? 'saas-v3-badge-green' :
+                                  student.currentStatus === 'Drop-out' ? 'saas-v3-badge-red' :
+                                  student.currentStatus === 'Completed' ? 'saas-v3-badge-purple' :
+                                  'saas-v3-badge-yellow'
+                                }>
+                                  {student.currentStatus || 'Active'}
+                                </span>
+                              </td>
+                              <td>
+                                <button onClick={() => { setSelectedStudentForProfile(student); setIsProfileModalVisible(true); }} style={{background: 'transparent', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '16px', fontWeight: 'bold'}}>...</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
 
               {activeTab === '4' && (
@@ -975,8 +974,8 @@ const StaffDashboard = () => {
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
                      {scheduleList.length === 0 && (
-                        <div style={{ padding: '32px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
-                           <p style={{ color: 'var(--text-secondary)', fontSize: '16px', margin: 0 }}>No batches assigned to your schedule.</p>
+                        <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
+                           <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>No batches assigned to your schedule.</p>
                         </div>
                      )}
                      {scheduleList.map(batch => (
@@ -992,15 +991,15 @@ const StaffDashboard = () => {
                            </div>
                            
                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
                                <Clock style={{ width: '16px', height: '16px' }} />
                                <span>{batch.classTiming || 'Timing Not Set'}</span>
                              </div>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
                                <CalendarIcon style={{ width: '16px', height: '16px' }} />
                                <span>{batch.startDate} to {batch.endDate}</span>
                              </div>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
                                <Users style={{ width: '16px', height: '16px' }} />
                                <span>{studentList.filter(s => s.course === batch.courseName).length} Enrolled Students</span>
                              </div>
@@ -1016,7 +1015,7 @@ const StaffDashboard = () => {
                   {/* Context Overlay Modal for Selected Batch */}
                   {selectedBatch && (
                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(30, 41, 59, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', zIndex: 1000 }}>
-                      <div style={{ width: '450px', maxWidth: '100%', height: '100%', backgroundColor: 'var(--panel-solid-white)', padding: '32px', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', overflowY: 'auto' }}>
+                      <div style={{ width: '450px', maxWidth: '100%', height: '100%', backgroundColor: 'var(--panel-solid-white)', padding: '20px', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', overflowY: 'auto' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                           <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: 'var(--text-primary-crisp)' }}>Class Context</h3>
                           <button onClick={() => setSelectedBatch(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted-gray)' }}><XCircle /></button>
@@ -1042,10 +1041,10 @@ const StaffDashboard = () => {
                               </div>
                               <div style={{ flex: 1, fontSize: '14px', fontWeight: '500', color: 'var(--text-primary-crisp)' }}>{record.name}</div>
                               <div>
-                                <button style={{ width: '36px', padding: '6px', backgroundColor: (attendanceState[record.id] === 'P' || !attendanceState[record.id]) ? 'var(--success-vibrant, #10b981)' : 'var(--bg-hover)', color: (attendanceState[record.id] === 'P' || !attendanceState[record.id]) ? '#fff' : 'var(--text-secondary)', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                                <button style={{ width: '36px', padding: '6px', backgroundColor: (attendanceState[record.id] === 'P' || !attendanceState[record.id]) ? 'var(--success-vibrant, #10b981)' : 'var(--bg-hover)', color: (attendanceState[record.id] === 'P' || !attendanceState[record.id]) ? '#fff' : '#64748b', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
                                   P
                                 </button>
-                                <button style={{ width: '36px', padding: '6px', marginLeft: '8px', backgroundColor: attendanceState[record.id] === 'A' ? 'var(--danger-vibrant, #ef4444)' : 'var(--bg-hover)', color: attendanceState[record.id] === 'A' ? '#fff' : 'var(--text-secondary)', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                                <button style={{ width: '36px', padding: '6px', marginLeft: '8px', backgroundColor: attendanceState[record.id] === 'A' ? 'var(--danger-vibrant, #ef4444)' : 'var(--bg-hover)', color: attendanceState[record.id] === 'A' ? '#fff' : '#64748b', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
                                   A
                                 </button>
                               </div>
@@ -1101,8 +1100,8 @@ const StaffDashboard = () => {
                     <h3 className="text-lg font-semibold mb-4 text-slate-800">Today's Batches</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
                       {scheduleList.length === 0 && (
-                        <div style={{ padding: '32px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
-                           <p style={{ color: 'var(--text-secondary)', fontSize: '16px', margin: 0 }}>No batches scheduled for today.</p>
+                        <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
+                           <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>No batches scheduled for today.</p>
                         </div>
                       )}
                       {scheduleList.map(batch => (
@@ -1115,11 +1114,11 @@ const StaffDashboard = () => {
                            </div>
                            
                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
                                <Clock style={{ width: '16px', height: '16px' }} />
                                <span>{batch.classTiming || 'Timing Not Set'}</span>
                              </div>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
                                <Users style={{ width: '16px', height: '16px' }} />
                                <span>{studentList.filter(s => s.course === batch.courseName).length} Enrolled Students</span>
                              </div>
@@ -1139,16 +1138,16 @@ const StaffDashboard = () => {
                     <h3 className="text-lg font-semibold mb-4 text-slate-800">Attendance History</h3>
                     <div className="w-full overflow-x-auto">
                       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}>
-                        <table style={{ width: '100%', minWidth: '950px', borderCollapse: 'collapse' }}>
+                        <table className="saas-table">
                           <thead>
-                            <tr style={{ backgroundColor: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)' }}>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Date</th>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Batch Name</th>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Time Slot</th>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Total Students</th>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Present</th>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Absent</th>
-                              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Action</th>
+                            <tr>
+                              <th>Date</th>
+                              <th>Batch Name</th>
+                              <th>Time Slot</th>
+                              <th>Total Students</th>
+                              <th>Present</th>
+                              <th>Absent</th>
+                              <th>Action</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1160,13 +1159,13 @@ const StaffDashboard = () => {
                               return (
                                 <React.Fragment key={r.id}>
                                   <tr onClick={() => setExpandedRowId(isExpanded ? null : r.id)} style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', backgroundColor: isExpanded ? 'var(--bg-hover)' : 'transparent' }}>
-                                    <td style={{ padding: '12px 16px' }}>{r.date}</td>
-                                    <td style={{ padding: '12px 16px' }}>{r.batchName}</td>
-                                    <td style={{ padding: '12px 16px' }}>{r.slot}</td>
-                                    <td style={{ padding: '12px 16px' }}>{r.records?.length || 0}</td>
-                                    <td style={{ padding: '12px 16px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>{r.totalPresentees !== undefined ? r.totalPresentees : (r.records?.filter(rec => rec.status === 'P').length || 0)}</td>
-                                    <td style={{ padding: '12px 16px', color: 'var(--red-600, #dc2626)', fontWeight: 'bold' }}>{r.totalAbsentees !== undefined ? r.totalAbsentees : (r.records?.filter(rec => rec.status === 'A').length || 0)}</td>
-                                    <td style={{ padding: '12px 16px' }}>
+                                    <td>{r.date}</td>
+                                    <td>{r.batchName}</td>
+                                    <td>{r.slot}</td>
+                                    <td>{r.records?.length || 0}</td>
+                                    <td>{r.totalPresentees !== undefined ? r.totalPresentees : (r.records?.filter(rec => rec.status === 'P').length || 0)}</td>
+                                    <td>{r.totalAbsentees !== undefined ? r.totalAbsentees : (r.records?.filter(rec => rec.status === 'A').length || 0)}</td>
+                                    <td>
                                       {editable ? (
                                         <button 
                                           onClick={(e) => {
@@ -1192,13 +1191,13 @@ const StaffDashboard = () => {
                                           <Pencil style={{ width: '12px', height: '12px' }} /> Edit
                                         </button>
                                       ) : (
-                                        <span style={{ padding: '4px 8px', backgroundColor: 'var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Closed</span>
+                                        <span style={{ padding: '4px 8px', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Closed</span>
                                       )}
                                     </td>
                                   </tr>
                                   {isExpanded && (
                                     <tr>
-                                      <td colSpan="7" style={{ padding: '16px', backgroundColor: 'var(--bg-hover)' }}>
+                                      <td>
                                         <div style={{ backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                                           <h4 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Student Attendance List</h4>
                                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '24px' }}>
@@ -1211,7 +1210,7 @@ const StaffDashboard = () => {
                                                   <span style={{ color: 'var(--red-600, #dc2626)', backgroundColor: 'var(--red-50, #fef2f2)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><XCircle style={{ width: '14px', height: '14px' }} /> Absent</span>
                                                 )}
                                               </div>
-                                            )) : <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No records found for this batch.</div>}
+                                            )) : <div style={{ color: '#64748b', fontStyle: 'italic' }}>No records found for this batch.</div>}
                                           </div>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontWeight: 'bold' }}>
@@ -1231,7 +1230,7 @@ const StaffDashboard = () => {
                               );
                             })}
                             {attendanceHistoryList.length === 0 && (
-                              <tr><td colSpan="7" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>No attendance history found.</td></tr>
+                              <tr><td>No attendance history found.</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -1252,7 +1251,7 @@ const StaffDashboard = () => {
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-main)' }}>Select Course</label>
                     <select 
-                      className="native-form-select" 
+                      className="native-form-select saas-v3-form-select" 
                       value={facultyMarksCourseFilter} 
                       onChange={(e) => {
                         setFacultyMarksCourseFilter(e.target.value);
@@ -1271,7 +1270,7 @@ const StaffDashboard = () => {
                     <input 
                       type="text" 
                       placeholder="e.g. Midterm, Final" 
-                      className="native-form-input" 
+                      className="native-form-input saas-v3-form-input" 
                       value={facultyMarksGlobalExamName}
                       onChange={(e) => setFacultyMarksGlobalExamName(e.target.value)}
                       style={{ width: '100%' }}
@@ -1283,13 +1282,13 @@ const StaffDashboard = () => {
                   const studentsInCourse = studentList.filter(s => s.course === facultyMarksCourseFilter);
                   
                   if (studentsInCourse.length === 0) {
-                    return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>No students found in this course.</div>;
+                    return <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No students found in this course.</div>;
                   }
 
                   return (
                     <div>
                       <div className="native-table-wrapper" style={{ overflowX: 'auto', marginBottom: '24px' }}>
-                        <table className="native-table">
+                        <table className="saas-table">
                           <thead>
                             <tr>
                               <th>Student Name</th>
@@ -1307,7 +1306,7 @@ const StaffDashboard = () => {
                                   <input 
                                     type="number" 
                                     placeholder="e.g. 85" 
-                                    className="native-form-input" 
+                                    className="native-form-input saas-v3-form-input" 
                                     style={{ maxWidth: '100px' }}
                                     value={facultyMarksFormData[student.id]?.marks || ''}
                                     onChange={(e) => setFacultyMarksFormData(prev => ({
@@ -1320,7 +1319,7 @@ const StaffDashboard = () => {
                                   <input 
                                     type="text" 
                                     placeholder="e.g. A" 
-                                    className="native-form-input" 
+                                    className="native-form-input saas-v3-form-input" 
                                     style={{ maxWidth: '80px' }}
                                     value={facultyMarksFormData[student.id]?.grade || ''}
                                     onChange={(e) => setFacultyMarksFormData(prev => ({
@@ -1444,7 +1443,7 @@ const StaffDashboard = () => {
       )}
     {isEditModalVisible && (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
           <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Edit Student Profile</h2>
           <form onSubmit={(e) => { 
             e.preventDefault(); 
@@ -1466,7 +1465,7 @@ const StaffDashboard = () => {
             <div>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Phone Number</label>
               <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
+                <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: '#64748b' }}>+91 (IN)</span>
                 <input type="text" placeholder="Student Phone" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({phoneNumber: e.target.value})} defaultValue={editForm.getFieldValue('phoneNumber')?.replace('+91', '')} />
               </div>
             </div>
@@ -1513,7 +1512,7 @@ const StaffDashboard = () => {
               <div>
                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
                 <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                  <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
+                  <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: '#64748b' }}>+91 (IN)</span>
                   <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({parentPhone: e.target.value})} defaultValue={editForm.getFieldValue('parentPhone')?.replace('+91', '')} />
                 </div>
               </div>
@@ -1539,7 +1538,7 @@ const StaffDashboard = () => {
     
     {isSubmitSummaryModalVisible && (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '450px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+        <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--green-600, #16a34a)', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
             <CheckCircle2 style={{ width: '24px', height: '24px' }} />
             <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Attendance Summary</h2>
@@ -1547,26 +1546,26 @@ const StaffDashboard = () => {
           
           <div style={{ backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', marginBottom: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: '16px' }}>
-              <div style={{ fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Batch</div>
+              <div style={{ fontWeight: 'bold', color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Batch</div>
               <div style={{ fontWeight: 'bold', textAlign: 'right' }}>{selectedBatch?.courseName || 'N/A'}</div>
               
-              <div style={{ fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Taken By</div>
+              <div style={{ fontWeight: 'bold', color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Taken By</div>
               <div style={{ fontWeight: 'bold', textAlign: 'right' }}>{user?.name}</div>
               
-              <div style={{ fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase' }}>Total Absentees</div>
+              <div style={{ fontWeight: 'bold', color: '#64748b', fontSize: '12px', textTransform: 'uppercase' }}>Total Absentees</div>
               <div style={{ fontWeight: 'bold', color: 'var(--red-500, #ef4444)', textAlign: 'right', fontSize: '18px' }}>{absenteesList.length}</div>
             </div>
           </div>
 
           {absenteesList.length > 0 && (
             <div style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', maxHeight: '192px', overflowY: 'auto', marginBottom: '16px' }}>
-              <p style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-secondary)', margin: '0 0 8px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Absent Students:</p>
+              <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#64748b', margin: '0 0 8px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Absent Students:</p>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {absenteesList.map(s => (
                   <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
                     <span style={{ fontWeight: 'bold' }}>{s.name}</span>
                     {s.parentPhone ? (
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px' }}>{s.parentPhone}</span>
+                      <span style={{ fontSize: '12px', color: '#64748b', backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px' }}>{s.parentPhone}</span>
                     ) : (
                       <span style={{ fontSize: '12px', color: 'var(--red-500, #ef4444)', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '4px 8px', borderRadius: '4px' }}>No phone</span>
                     )}
@@ -1594,10 +1593,10 @@ const StaffDashboard = () => {
 
     {isFeeModalVisible && (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="custom-modal-viewport-card modal-flex-layout-group" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column' }}>
+        <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
           <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Offline Fee Collection - {selectedStudentForFee?.name || ''}</h2>
           <div style={{ textAlign: 'center', margin: '12px 0' }}>
-            <span style={{ color: 'var(--text-secondary)' }}>Enter the fee amounts received via different modes.</span>
+            <span style={{ color: '#64748b' }}>Enter the fee amounts received via different modes.</span>
           </div>
           
           <div style={{ padding: '16px', backgroundColor: 'var(--indigo-50, #eef2ff)', borderRadius: '8px', border: '1px solid var(--indigo-100, #e0e7ff)', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1645,11 +1644,11 @@ const StaffDashboard = () => {
                  {user?.documents?.signatureUrl || user?.signatureUrl ? (
                    <img src={user?.documents?.signatureUrl || user?.signatureUrl} alt="Signature" style={{ height: '48px', objectFit: 'contain' }} />
                  ) : (
-                   <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', padding: '0 16px', fontSize: '14px', fontStyle: 'italic' }}>
+                   <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', padding: '0 16px', fontSize: '14px', fontStyle: 'italic' }}>
                      [Digital Signature Not Uploaded]
                    </div>
                  )}
-                 <div style={{ display: 'flex', flexDirection: 'column', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                 <div style={{ display: 'flex', flexDirection: 'column', fontSize: '14px', color: '#64748b' }}>
                    <span style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
                    <span style={{ fontSize: '12px' }}>Authorized Cashier</span>
                  </div>
@@ -1698,16 +1697,16 @@ const StaffDashboard = () => {
 
       {globalSearchModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+          <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>{globalSearchAction === 'edit' ? 'Edit Student Record' : 'Delete Student Record'}</h2>
-              <button onClick={() => { setGlobalSearchModalVisible(false); setGlobalSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><XCircle /></button>
+              <button onClick={() => { setGlobalSearchModalVisible(false); setGlobalSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><XCircle /></button>
             </div>
             
             <div className="search-bar-wrapper" style={{ marginBottom: '24px' }}>
               <Search className="search-bar-icon" />
               <input 
-                className="search-bar-input"
+                className="search-bar-input saas-v3-form-input"
                 type="text" 
                 placeholder="Search by Name, Enrollment ID, or Mobile..." 
                 value={globalSearchQuery}
@@ -1719,7 +1718,7 @@ const StaffDashboard = () => {
             
             <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {globalSearchQuery.trim() === '' ? (
-                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>Start typing to search for a student...</div>
+                <div style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>Start typing to search for a student...</div>
               ) : (
                 studentList.filter(s => {
                   const q = globalSearchQuery.toLowerCase();
@@ -1749,7 +1748,7 @@ const StaffDashboard = () => {
                   >
                     <div>
                       <div style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '15px' }}>{student.name}</div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>ID: {student.enrollmentNo || student.id.substring(0,6)} | Mob: {student.phoneNumber}</div>
+                      <div style={{ fontSize: '13px', color: '#64748b' }}>ID: {student.enrollmentNo || student.id.substring(0,6)} | Mob: {student.phoneNumber}</div>
                     </div>
                     <div style={{ padding: '6px 12px', backgroundColor: globalSearchAction === 'edit' ? 'var(--blue-500, #3b82f6)' : 'var(--red-500, #ef4444)', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
                       {globalSearchAction === 'edit' ? 'Edit' : 'Delete'}

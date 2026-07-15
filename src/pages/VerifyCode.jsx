@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Form, Input, Button } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { verifyUniqueCode } from '../firebase/services';
 import { KeyRound, ShieldCheck, Mail, LogOut } from 'lucide-react';
@@ -9,7 +8,6 @@ const VerifyCode = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const navigate = useNavigate();
-  const [form] = Form.useForm();
 
   useEffect(() => {
     // Clean up any residual Firebase/Google API hooks that might freeze the window closure
@@ -55,62 +53,62 @@ const VerifyCode = () => {
   };
 
   return (
-    <motion.div 
-      className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-    >
-      {/* Background glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vh] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none"></div>
-
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden relative z-10 border border-slate-100">
+    <div className="saas-v3-auth-page">
+      <div className="saas-v3-auth-card">
         
-        {/* Header Section */}
-        <div className="bg-gradient-to-br from-slate-50 to-indigo-50/30 p-8 text-center border-b border-slate-100">
-          <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-4 border border-indigo-100">
-            <ShieldCheck className="w-8 h-8 text-indigo-600" />
+        <div className="saas-v3-auth-logo-container">
+          <div style={{ width: '48px', height: '48px', backgroundColor: '#f1f5f9', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ShieldCheck style={{ color: '#111827', width: '24px', height: '24px' }} />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Security Verification</h2>
-          <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-            Verification Required. Enter your Organization Access Code to securely access your dashboard.
-          </p>
+        </div>
+        
+        <h2 className="saas-v3-auth-title">Security Verification</h2>
+        <p className="saas-v3-auth-subtitle">
+          Enter your Organization Access Code to securely access your dashboard.
+        </p>
+
+        <div style={{ marginBottom: '24px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <Mail style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+          <span style={{ fontSize: '13px', fontWeight: '500', color: '#475569' }}>Verifying for: {email}</span>
         </div>
 
-        {/* Verification Form */}
-        <div className="p-8">
-          
-          <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-center gap-3">
-            <Mail className="w-4 h-4 text-slate-400" />
-            <span className="text-sm font-medium text-slate-600 truncate">Verifying for: {email}</span>
-          </div>
-
-          <Form form={form} layout="vertical" onFinish={onFinish} size="large">
-            <Form.Item
-              name="accessCode"
-              rules={[{ required: true, message: 'Please input your Organization Access Code!' }]}
-            >
-              <Input.Password 
-                prefix={<KeyRound className="text-slate-400 mr-2 w-5 h-5" />} 
+        <form onSubmit={(e) => { e.preventDefault(); onFinish({ accessCode: e.target.accessCode.value }); }} style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div className="saas-v3-form-group">
+            <label className="saas-v3-form-label">Access Code</label>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <KeyRound style={{ position: 'absolute', left: '16px', color: '#9ca3af' }} size={18} />
+              <input 
+                type="password"
+                name="accessCode"
                 placeholder="Enter Access Code" 
-                className="h-14 rounded-xl text-lg font-mono tracking-widest text-center" 
+                className="saas-v3-form-input" 
+                style={{ paddingLeft: '44px', fontFamily: 'monospace', letterSpacing: '2px' }}
+                required
               />
-            </Form.Item>
-            
-            <div className="mt-8 space-y-4">
-              <Button type="primary" htmlType="submit" loading={loading} className="w-full h-14 rounded-xl text-lg font-semibold bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-600/20">
-                Verify Identity
-              </Button>
-              
-              <Button type="text" onClick={handleCancel} className="w-full h-12 rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 font-medium">
-                <LogOut className="w-4 h-4" /> Cancel & Logout
-              </Button>
             </div>
-          </Form>
+          </div>
+          
+          <button 
+            type="submit" 
+            disabled={loading} 
+            className="saas-v3-btn-solid"
+            style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px', marginTop: '8px' }}
+          >
+            {loading ? 'Verifying...' : 'Verify Identity'}
+          </button>
+          
+          <button 
+            type="button" 
+            onClick={handleCancel} 
+            className="saas-v3-btn-outline"
+            style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '14px', marginTop: '16px' }}
+          >
+            <LogOut size={16} /> Cancel & Logout
+          </button>
+        </form>
 
-        </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

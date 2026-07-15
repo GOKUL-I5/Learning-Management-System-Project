@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, App as AntdApp } from 'antd';
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase/config';
@@ -78,57 +78,82 @@ function App() {
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#6366F1', // Indigo Purple
-          colorSuccess: '#22C55E',
-          colorWarning: '#F59E0B',
-          colorError: '#EF4444',
-          colorInfo: '#818CF8',
-          colorTextBase: '#111827',
-          borderRadius: 24, // Generous global rounding
-          fontFamily: `'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`,
+          colorPrimary: '#4F46E5', // LMS brand primary (Indigo 600)
+          colorSuccess: '#10B981', // Soft green
+          colorWarning: '#F59E0B', // Soft amber
+          colorError: '#EF4444', // Muted red
+          colorInfo: '#6366F1',
+          colorTextBase: '#1F2937', // Dark charcoal
+          colorTextSecondary: '#6B7280', // Muted gray
+          borderRadius: 12, // 12px standard rounding
+          fontFamily: `'Inter', system-ui, -apple-system, sans-serif`,
           wireframe: false,
           colorBgContainer: '#FFFFFF',
-          colorBgLayout: '#F3F4F6',
-          colorBorder: '#F3F4F6', // Extremely soft borders
+          colorBgLayout: '#F7F8FA', // Very light gray page background
+          colorBorder: '#E5E7EB', // Light gray borders
+          controlHeight: 48, // Comfortable input height
         },
         components: {
+          Form: {
+            labelColor: '#6B7280',
+            labelFontSize: 13,
+            itemMarginBottom: 24,
+          },
           Button: {
-            controlHeight: 44,
-            borderRadius: 9999, // Pill shape
-            fontWeight: 700,
-            paddingInline: 24,
+            controlHeight: 40,
+            borderRadius: 10,
+            fontWeight: 600,
+            paddingInline: 20,
+            primaryShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)',
           },
           Card: {
-            borderRadiusLG: 24,
-            boxShadowTertiary: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+            borderRadiusLG: 16,
+            boxShadowTertiary: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025)',
           },
           Table: {
-            borderRadius: 24,
-            headerBg: '#FFFFFF', // Clean white header
-            headerColor: '#9CA3AF', // Light gray text
+            borderRadius: 16,
+            headerBg: '#FFFFFF',
+            headerColor: '#6B7280',
             rowHoverBg: '#F9FAFB',
-            colorBorderSecondary: 'transparent', // Removes vertical borders internally
+            colorBorderSecondary: 'transparent',
           },
           Modal: {
-            borderRadiusLG: 32,
+            borderRadiusLG: 16,
             paddingContentBase: 32,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
           },
           Input: {
-            controlHeight: 48,
-            borderRadius: 9999, // Pill search/inputs
+            controlHeight: 44,
+            borderRadius: 12,
             colorBorder: '#E5E7EB',
+            colorBgContainer: '#F9FAFB', // Soft gray background
+            activeShadow: '0 0 0 2px rgba(79, 70, 229, 0.1)',
           },
           Select: {
-            controlHeight: 48,
-            borderRadius: 9999,
+            controlHeight: 44,
+            borderRadius: 12,
             colorBorder: '#E5E7EB',
+            colorBgContainer: '#F9FAFB',
+            activeShadow: '0 0 0 2px rgba(79, 70, 229, 0.1)',
+          },
+          DatePicker: {
+            controlHeight: 44,
+            borderRadius: 12,
+            colorBgContainer: '#F9FAFB',
+          },
+          TimePicker: {
+            controlHeight: 44,
+            borderRadius: 12,
+            colorBgContainer: '#F9FAFB',
           }
         }
       }}
     >
-      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AnimatedRoutes />
-      </Router>
+      <AntdApp>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <AnimatedRoutes />
+        </Router>
+      </AntdApp>
     </ConfigProvider>
   );
 }

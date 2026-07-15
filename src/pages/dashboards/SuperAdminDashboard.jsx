@@ -107,14 +107,14 @@ const SuperAdminDashboard = () => {
   return (
     <div style={{ backgroundColor: 'var(--bg-main)' }} className="flex justify-center items-center h-screen w-full">
       <Layout className="app-window-container w-full max-w-[1400px]">
-        <Header className="sticky top-0 z-10 flex justify-between items-center px-8 py-6 flex-wrap gap-4 h-auto leading-normal" style={{ backgroundColor: 'var(--card-bg)' }}>
+        <Header className="saas-header">
         <div className="flex items-center gap-3">
           <h1 className="m-0 text-lg font-bold" style={{ color: 'var(--text-main)' }}>Welcome Back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-teal-500">Santhanabharath The king!</span></h1>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex flex-col items-end gap-1 hidden sm:flex">
             <div className="text-sm font-bold" style={{ color: 'var(--text-main)' }}>Super Admin</div>
-            <div className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>System Access: <span style={{ color: 'var(--color-primary)' }}>Global</span></div>
+            <div className="text-xs font-bold" style={{ color: '#64748b' }}>System Access: <span style={{ color: '#4f46e5' }}>Global</span></div>
           </div>
           <button onClick={logoutUser} className="top-logout-btn flex items-center gap-2">
             <LogOut className="w-4 h-4" /> Logout
@@ -122,18 +122,18 @@ const SuperAdminDashboard = () => {
         </div>
       </Header>
 
-      <Content className="p-8 max-w-7xl mx-auto w-full superadmin-main-content">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+      <Content className="p-6 w-full w-full superadmin-main-content">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card 
             title={<span className="flex items-center gap-2"><Building2 className="w-5 h-5 text-blue-500" /> Create New Organization</span>}
             className="shadow-sm rounded-2xl border-slate-200"
           >
             <Form form={organizationForm} layout="vertical" onFinish={handleCreateOrganization}>
               <Form.Item name="name" label="Organization Name" rules={[{ required: true }]}>
-                <Input placeholder="Enter organization name" size="large" />
+                <Input placeholder="Enter organization name" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
               <Form.Item name="accessId" label="Organization Access ID" rules={[{ required: true, message: 'Please provide a unique Access ID for this organization' }]}>
-                <Input placeholder="Enter custom access ID (e.g., ORG2024)" size="large" />
+                <Input placeholder="Enter custom access ID (e.g., ORG2024)" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
               <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
                 Create Organization
@@ -147,20 +147,20 @@ const SuperAdminDashboard = () => {
           >
             <Form form={adminForm} layout="vertical" onFinish={handleCreateAdmin}>
               <Form.Item name="organizationId" label="Select Organization" rules={[{ required: true }]}>
-                <Select placeholder="Select an organization" size="large">
+                <Select placeholder="Select an organization" size="large" className="saas-v3-form-select">
                   {organizations.map(c => (
                     <Option key={c.id} value={c.id}>{c.name}</Option>
                   ))}
                 </Select>
               </Form.Item>
               <Form.Item name="name" label="Admin Name" rules={[{ required: true }]}>
-                <Input placeholder="Enter admin name" size="large" />
+                <Input placeholder="Enter admin name" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
               <Form.Item name="email" label="Admin Email" rules={[{ required: true, type: 'email' }]}>
-                <Input placeholder="Enter admin email" size="large" />
+                <Input placeholder="Enter admin email" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
               <Form.Item name="phoneNumber" label="Admin Phone Number" rules={[{ required: true, message: 'Please input phone number' }]}>
-                <Input placeholder="Enter admin phone number" size="large" />
+                <Input placeholder="Enter admin phone number" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
               <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
                 Create Admin

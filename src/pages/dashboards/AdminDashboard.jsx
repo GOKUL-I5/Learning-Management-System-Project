@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import { Form, Input, Button, Card, message, Layout, Typography, Table, Popconfirm, Modal, Select, DatePicker, TimePicker, Upload, Menu, Dropdown, Tabs, Collapse } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import { createStaff, logoutUser, createStudent, getOrganizationStaff, getOrganizationStudents, subscribeToOrganizationStudents, fetchAdmissionsHierarchy, getISOWeekNumber, migrateAllStudentsToHierarchy, deleteUserDoc, updateUserDoc, createCourse, getOrganizationCourses, createCourseAssignment, getCourseAssignments, uploadCourseContentFile, deleteCourseAssignment, updateOrganizationLogo, getOrganizationDetails, getAttendanceHistoryByOrg, subscribeToAttendanceHistoryByOrg, updateCourse, createReceipt, updateStudentStatus, deleteCourse, deleteCourseModule, listenToOrganizationStatus, logTransaction, addStudentMarks, getStudentMarks } from '../../firebase/services';
-import { Users, GraduationCap, LogOut, ShieldCheck, BookOpen, Calendar, UploadCloud, Settings, Briefcase, Search, Image as ImageIcon, Pencil, Trash2, FileSpreadsheet, ClipboardList, Download, CheckCircle, XCircle, Banknote, Clock, X, UserPlus, FileText, Award, Eye } from 'lucide-react';
+import { Users, GraduationCap, LogOut, ShieldCheck, BookOpen, Calendar, UploadCloud, Settings, Briefcase, Search, Image as ImageIcon, Pencil, Trash2, FileSpreadsheet, ClipboardList, Download, CheckCircle, XCircle, Banknote, Clock, X, UserPlus, FileText, Award, Eye, ChevronDown, Grid, Filter, ArrowDownUp, TrendingUp, TrendingDown, Home, LineChart, PieChart, Box, MessageSquare, Moon, Sliders } from 'lucide-react';
 import { Checkbox } from 'antd';
 import './AdminDashboard.css';
 
@@ -97,8 +97,9 @@ const AdminDashboard = () => {
     fetchDrillDown();
   }, [drillDownPath, isAdmissionSummaryModalVisible, user?.organizationId]);
 
-  
-  // Student Ledger Filters
+  const [studentCurrentPage, setStudentCurrentPage] = useState(1);
+  const [globalMonthFilter, setGlobalMonthFilter] = useState('All');
+  const months = ['All', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const [studentTextSearch, setStudentTextSearch] = useState('');
   const [studentCourseFilter, setStudentCourseFilter] = useState('All');
   const [studentAgeFilter, setStudentAgeFilter] = useState('All');
@@ -667,7 +668,11 @@ const AdminDashboard = () => {
       const academicYear = getAcademicYearFromDOJ(s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString() : null));
       const matchAcademicYear = studentAcademicYearFilter === 'All' || academicYear === studentAcademicYearFilter;
 
-      return matchSearch && matchCourse && matchAge && matchAcademicYear;
+      const dateObj = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
+      const studentMonth = dateObj ? dateObj.toLocaleString('default', { month: 'long' }) : null;
+      const matchGlobalMonth = globalMonthFilter === 'All' || studentMonth === globalMonthFilter;
+
+      return matchSearch && matchCourse && matchAge && matchAcademicYear && matchGlobalMonth;
     });
   };
 
@@ -1032,143 +1037,131 @@ const AdminDashboard = () => {
   ];
 
   return (
-    <div className="main-dashboard-layout-wrapper" style={{ display: 'flex', flexDirection: 'row', height: '100vh', overflow: 'hidden', backgroundColor: 'var(--bg-main)', color: 'var(--text-main-dark)' }}>
+    <>
+    <div className="uxer-layout">
       <style>{`
         input.search-bar-input[type="text"], div.search-bar-wrapper > input[type="text"] { padding-left: 46px !important; }
         div.search-bar-wrapper > svg.search-bar-icon, svg.search-bar-icon { position: absolute !important; left: 14px !important; top: 50% !important; transform: translateY(-50%) !important; pointer-events: none !important; color: #6b7280 !important; z-index: 10 !important; }
         div.search-bar-wrapper { position: relative !important; display: flex !important; align-items: center !important; }
       `}</style>
       {/* Sidebar Navigation */}
-      <aside className="flex flex-col h-full overflow-y-auto w-[260px] shrink-0" style={{ backgroundColor: 'var(--card-bg-clean)' }}>
-        <div className="flex flex-col items-center justify-center p-6 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center justify-center w-24 h-24 rounded-full border-2 overflow-hidden" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-hover)' }}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="Org Logo" className="w-full h-full object-contain p-2" />
-            ) : (
-              <ShieldCheck className="w-12 h-12 text-slate-400" />
-            )}
-          </div>
-          <h4 className="mt-4 text-sm font-bold text-center" style={{ color: 'var(--text-main)' }}>{user?.organizationName || 'Organization'}</h4>
+      <aside className="uxer-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: '24px 16px' }}>
+        <div className="uxer-sidebar-logo" style={{ marginBottom: '24px', padding: '0 8px' }}>
+          <span style={{ fontSize: '24px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px' }}>AASC</span>
+        </div>
+        
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto' }}>
+          <div className="uxer-sidebar-item"><Home className="w-5 h-5" /> Dashboard</div>
+          <div className="uxer-sidebar-item"><CheckCircle className="w-5 h-5" /> Analytics</div>
+          <div className="uxer-sidebar-item"><PieChart className="w-5 h-5" /> Insights</div>
+          
+          <div onClick={() => setActiveTab('1')} className={`uxer-sidebar-item ${activeTab === '1' ? 'active' : ''}`}><Users className="w-5 h-5" /> Manage Faculty</div>
+          <div onClick={() => setActiveTab('2')} className={`uxer-sidebar-item ${(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') ? 'active' : ''}`}><Users className="w-5 h-5" /> Manage Students</div>
+          <div onClick={() => setActiveTab('journey')} className={`uxer-sidebar-item ${activeTab === 'journey' ? 'active' : ''}`}><GraduationCap className="w-5 h-5" /> Student Journey Hub</div>
+          <div onClick={() => setActiveTab('3')} className={`uxer-sidebar-item ${activeTab === '3' ? 'active' : ''}`}><BookOpen className="w-5 h-5" /> Course Management</div>
+          <div onClick={() => setActiveTab('view-courses')} className={`uxer-sidebar-item ${activeTab === 'view-courses' ? 'active' : ''}`}><Eye className="w-5 h-5" /> View Course</div>
+          <div onClick={() => setActiveTab('billing')} className={`uxer-sidebar-item ${activeTab === 'billing' ? 'active' : ''}`}><Banknote className="w-5 h-5" /> Billing Management</div>
+          <div onClick={() => setActiveTab('admission')} className={`uxer-sidebar-item ${activeTab === 'admission' ? 'active' : ''}`}><UserPlus className="w-5 h-5" /> Student Admission</div>
+          <div onClick={() => setActiveTab('reports')} className={`uxer-sidebar-item ${activeTab === 'reports' ? 'active' : ''}`}><FileText className="w-5 h-5" /> Reports</div>
+          <div onClick={() => setActiveTab('marks')} className={`uxer-sidebar-item ${activeTab === 'marks' ? 'active' : ''}`}><Award className="w-5 h-5" /> Marks Management</div>
+
+          <div className="uxer-sidebar-item"><Sliders className="w-5 h-5" /> Configuration</div>
+          <div onClick={() => setActiveTab('settings')} className={`uxer-sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}><Settings className="w-5 h-5" /> Settings</div>
         </div>
 
-        <nav className="flex-1 py-4 px-4">
-          <ul className="flex flex-col gap-2 list-none p-0 m-0">
-            <li className="px-4 py-2 text-xs font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>Management</li>
-            <li 
-              onClick={() => setActiveTab('1')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '1' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '1' ? 'var(--color-primary)' : 'transparent', color: activeTab === '1' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Users className="w-5 h-5" /> Manage Faculty</li>
-            <li 
-              onClick={() => setActiveTab('2')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '2' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '2' ? 'var(--color-primary)' : 'transparent', color: activeTab === '2' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><GraduationCap className="w-5 h-5" /> Manage Students</li>
-            <li 
-              onClick={() => setActiveTab('journey')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'journey' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'journey' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'journey' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Clock className="w-5 h-5" /> Student Journey Hub</li>
-            <li 
-              onClick={() => setActiveTab('3')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === '3' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === '3' ? 'var(--color-primary)' : 'transparent', color: activeTab === '3' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><BookOpen className="w-5 h-5" /> Course Management</li>
-            <li 
-              onClick={() => setActiveTab('view-courses')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'view-courses' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'view-courses' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'view-courses' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><BookOpen className="w-5 h-5" /> View Course</li>
-            <li 
-              onClick={() => setActiveTab('billing')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'billing' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'billing' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'billing' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Banknote className="w-5 h-5" /> Billing Management</li>
-            <li 
-              onClick={() => setActiveTab('admission')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'admission' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'admission' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'admission' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><UserPlus className="w-5 h-5" /> Student Admission</li>
-            <li 
-              onClick={() => setActiveTab('reports')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'reports' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'reports' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'reports' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><FileText className="w-5 h-5" /> Reports</li>
-            <li 
-              onClick={() => setActiveTab('marks')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'marks' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'marks' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'marks' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Award className="w-5 h-5" /> Marks Management</li>
-            
-            <li className="px-4 pt-4 pb-2 text-xs font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>Configuration</li>
-            <li 
-              onClick={() => setActiveTab('settings')} 
-              className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors rounded-full font-bold ${activeTab === 'settings' ? 'text-white' : 'hover:bg-slate-50'}`}
-              style={{ backgroundColor: activeTab === 'settings' ? 'var(--color-primary)' : 'transparent', color: activeTab === 'settings' ? '#ffffff' : 'var(--text-secondary)' }}
-            ><Settings className="w-5 h-5" /> Settings</li>
-          </ul>
-        </nav>
+        <div style={{ padding: '0 8px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#666666', fontSize: '14px', fontWeight: '500' }}>
+            <Moon className="w-5 h-5" /> Dark mode
+          </div>
+          <div style={{ width: '36px', height: '20px', backgroundColor: '#111111', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
+            <div style={{ width: '16px', height: '16px', backgroundColor: '#FFFFFF', borderRadius: '50%', position: 'absolute', top: '2px', right: '2px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}></div>
+          </div>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex flex-col h-full flex-1 main-content-display-pane">
-        {/* Header Banner */}
-        <header className="sticky top-0 z-10 flex justify-between items-center px-8 py-6 flex-wrap gap-4" style={{ backgroundColor: 'var(--card-bg-clean)' }}>
-          <div className="flex items-center gap-3">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Organization Logo" className="h-8 object-contain" />
-            ) : (
-              <ShieldCheck className="w-6 h-6 text-blue-600" />
-            )}
-            <h1 className="m-0 text-lg font-bold">Organization Admin Dashboard</h1>
+      <main className="uxer-main">
+        <header className="uxer-header">
+          <div className="uxer-header-left">
+            <div className="org-text">Organization</div>
+            <h1>Admin Dashboard</h1>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex flex-col items-end gap-1">
-              <div className="text-sm font-bold">{user?.name || 'Admin'}</div>
-              <div className="text-xs font-bold text-slate-500" style={{ color: 'var(--text-secondary)' }}>
-                Access ID: <span className="text-blue-600">{user?.organizationName}</span>
-              </div>
+          <div className="uxer-header-right">
+            <div className="uxer-search">
+              <Search className="w-4 h-4" style={{ color: '#999' }} />
+              <input type="text" placeholder="Search" />
+              <div className="uxer-shortcut">&#8984; F</div>
             </div>
-            <button onClick={logoutUser} className="top-logout-btn flex items-center gap-2">
-              <LogOut className="w-4 h-4" /> Logout
+            
+            <div style={{ position: 'relative' }}>
+              <select 
+                value={globalMonthFilter} 
+                onChange={(e) => setGlobalMonthFilter(e.target.value)} 
+                className="uxer-dropdown-btn"
+                style={{ appearance: 'none', paddingRight: '28px', backgroundColor: 'transparent', outline: 'none', cursor: 'pointer' }}
+              >
+                {months.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <ChevronDown className="w-4 h-4" style={{ color: '#999', position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            </div>
+
+            {(activeTab === '1' || activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
+              <button 
+                onClick={() => {
+                   if (activeTab === '1') {
+                     message.info('Faculty export not yet implemented');
+                   } else {
+                     handleBulkSingleCSV(filteredStudentList(studentList));
+                   }
+                }} 
+                className="uxer-dropdown-btn"
+              >
+                Export <Download className="w-4 h-4" style={{ color: '#999', marginLeft: '6px' }} />
+              </button>
+            )}
+
+            {activeTab === '1' && (
+              <button onClick={() => setIsAddFacultyModalVisible(true)} className="uxer-btn-green">
+                + New Faculty
+              </button>
+            )}
+            
+            {(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
+              <button onClick={() => setIsAddStudentModalVisible(true)} className="uxer-btn-green">
+                + New Student
+              </button>
+            )}
+            
+            <button onClick={logoutUser} className="uxer-icon-btn" title="Menu">
+              <Grid className="w-5 h-5" />
             </button>
           </div>
         </header>
 
         {/* Content Wrapper */}
-        <div className="p-6 w-full max-w-6xl mx-auto box-border">
-          
-          <div style={{ marginBottom: '24px', padding: '24px', backgroundColor: 'var(--indigo-50, #eef2ff)', border: '1px solid var(--indigo-100, #e0e7ff)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 'bold', color: 'var(--indigo-900, #312e81)' }}>Welcome back, {user?.name}</h2>
-              <p style={{ margin: 0, color: 'var(--indigo-700, #4338ca)' }}>Managing <span style={{ fontWeight: 'bold' }}>{user?.organizationName}</span></p>
-            </div>
-            <div style={{ backgroundColor: 'var(--card-bg)', padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Organization Access ID</span>
-              <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px' }}>{user?.organizationAccessId}</span>
-            </div>
-          </div>
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
 
-          <div style={{ backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              {activeTab === '1' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Manage Faculty</h3>
-                    <button onClick={() => setIsAddFacultyModalVisible(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}>
-                      <UserPlus className="w-5 h-5" /> Add Faculty
-                    </button>
-                  </div>
-                  
-                  <div className="search-bar-wrapper" style={{ marginTop: '16px', marginBottom: '16px' }}>
-                    <Search className="search-bar-icon" />
-                    <input 
-                      className="search-bar-input"
-                      type="text" 
-                      placeholder="Search by Name, Email, or Faculty ID..." 
-                      value={facultySearchQuery}
-                      onChange={(e) => setFacultySearchQuery(e.target.value)}
-                      style={{ width: '100%', padding: '10px 10px 10px 40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '14px', backgroundColor: 'var(--panel-solid-white)', color: 'var(--text-main)', outline: 'none' }}
-                    />
+          <div style={{ width: '100%' }}>
+            {activeTab === '1' && (
+                <div className="flex flex-col">
+                  <div className="uxer-toolbar">
+                    <div className="uxer-tabs">
+                      <div className="uxer-tab active">All Faculty</div>
+                    </div>
+                    <div className="uxer-actions">
+                      <div className="uxer-search">
+                        <Search className="w-4 h-4" style={{ color: 'var(--uxer-text-muted)' }} />
+                        <input 
+                          type="text" 
+                          placeholder="Search faculty..." 
+                          value={facultySearchQuery}
+                          onChange={(e) => setFacultySearchQuery(e.target.value)}
+                        />
+                      </div>
+                      <button className="uxer-btn-green" onClick={() => setIsAddFacultyModalVisible(true)}>
+                        <UserPlus className="w-4 h-4" /> Add Faculty
+                      </button>
+                    </div>
                   </div>
 
                   {(() => {
@@ -1179,14 +1172,11 @@ const AdminDashboard = () => {
                              (s.facultyId || '').toLowerCase().includes(q);
                     });
                     return (
-                      <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
-                        <div className="w-full overflow-x-auto">
-                          <Table dataSource={filteredStaffList} columns={staffColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} />
-                        </div>
+                      <div className="uxer-table-card">
+                        <Table dataSource={filteredStaffList} columns={staffColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} className="uxer-ant-table" />
                       </div>
                     );
                   })()}
-
                   {isAddFacultyModalVisible && (
                     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -1242,7 +1232,7 @@ const AdminDashboard = () => {
 
                   {isViewFacultyModalVisible && selectedViewFaculty && (
                     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative' }}>
+                      <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative' }}>
                         
                         <button 
                           onClick={() => setIsViewFacultyModalVisible(false)}
@@ -1305,7 +1295,7 @@ const AdminDashboard = () => {
               )}
 
               {(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
-                <div className="flex flex-col gap-8 items-center">
+                <div className="flex flex-col">
                   {isAddStudentModalVisible && (
                     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -1432,127 +1422,177 @@ const AdminDashboard = () => {
                     </div>
                   )}
 
-                  <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Students</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #22c55e', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #3b82f6', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Completed</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Completed').length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #ef4444', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Drop-out</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Drop-out').length}</div>
-                      </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--panel-solid-white, #fff)', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.06)', borderBottom: '3px solid #64748b', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', cursor: 'default' }} onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-                        <div style={{ fontSize: '13px', color: 'var(--text-muted-gray, #64748b)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Inactive</div>
-                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--text-primary-crisp, #0f172a)', marginTop: '8px', fontFamily: 'system-ui, sans-serif' }}>{studentList.filter(s => s.currentStatus === 'Inactive').length}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-                      <h3 style={{ fontSize: '22px', fontWeight: 'bold', color: 'var(--text-primary-crisp, #0f172a)', margin: 0 }}>Manage Students</h3>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <button type="button" onClick={() => { setGlobalSearchAction('edit'); setGlobalSearchModalVisible(true); }} style={{ padding: '10px 20px', backgroundColor: 'transparent', color: 'var(--accent-royal-purple, #6366f1)', border: '2px solid var(--accent-royal-purple, #6366f1)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-royal-purple, #6366f1)'; e.currentTarget.style.color = '#fff'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--accent-royal-purple, #6366f1)'; }}>
-                          Edit Student
-                        </button>
-                        <button type="button" onClick={() => { setGlobalSearchAction('delete'); setGlobalSearchModalVisible(true); }} style={{ padding: '10px 20px', backgroundColor: 'transparent', color: '#ef4444', border: '2px solid #ef4444', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s' }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = '#fff'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#ef4444'; }}>
-                          Delete Student
-                        </button>
-                        <Dropdown 
-                          menu={{ 
-                            items: [
-                              { key: 'single', label: 'Add Single Student' },
-                              { key: 'bulk', label: 'Bulk Import' }
-                            ], 
-                            onClick: ({ key }) => {
-                              if (key === 'single') setIsAddStudentModalVisible(true);
-                              if (key === 'bulk') setActiveTab('2-2');
-                            }
-                          }} 
-                          placement="bottomRight"
-                        >
-                          <button style={{ padding: '10px 20px', backgroundColor: 'var(--accent-royal-purple, #6366f1)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s', boxShadow: '0 4px 10px rgba(99, 102, 241, 0.2)' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#4f46e5'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--accent-royal-purple, #6366f1)'}>
-                            Add Student ▼
-                          </button>
-                        </Dropdown>
-                      </div>
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'center', backgroundColor: 'var(--card-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                      <div className="search-bar-wrapper" style={{ flex: 1 }}>
-                        <Search className="search-bar-icon" />
-                        <input 
-                          className="search-bar-input"
-                          type="text" 
-                          placeholder="Search by Student Name or Enrollment Number..." 
-                          value={studentTextSearch}
-                          onChange={(e) => setStudentTextSearch(e.target.value)}
-                          style={{ width: '100%', padding: '10px 10px 10px 40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '14px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', outline: 'none' }}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <select 
-                          value={studentCourseFilter}
-                          onChange={(e) => setStudentCourseFilter(e.target.value)}
-                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
-                        >
-                          <option value="All">All Courses</option>
-                          {courseList.map(course => (
-                            <option key={course.id || course.name} value={course.name}>{(course.name || "").replace(" (Full Course)", "")}</option>
-                          ))}
-                        </select>
-                        <select 
-                          value={studentAgeFilter}
-                          onChange={(e) => setStudentAgeFilter(e.target.value)}
-                          style={{ padding: '10px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
-                        >
-                          <option value="All">All Ages</option>
-                          <option value="Under 18">Under 18</option>
-                          <option value="18-24">18 - 24</option>
-                          <option value="25-30">25 - 30</option>
-                          <option value="30+">30+</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="w-full overflow-x-auto">
-                      <Tabs 
-                        activeKey={studentManagementTab} 
-                        onChange={setStudentManagementTab}
-                        items={[
-                          {
-                            key: 'active',
-                            label: 'Active & Inactive Students',
-                            children: renderStudentList(filteredStudentList(studentList.filter(s => (s.currentStatus || 'Active') === 'Active' || s.currentStatus === 'Inactive')))
-                          },
-                          {
-                            key: 'dropout',
-                            label: 'Drop-out List',
-                            children: renderStudentList(filteredStudentList(studentList.filter(s => s.currentStatus === 'Drop-out')))
-                          },
-                          {
-                            key: 'completed',
-                            label: 'Completed / Passed-out List',
-                            children: renderStudentList(filteredStudentList(studentList.filter(s => s.currentStatus === 'Completed')))
-                          }
-                        ]}
-
-                      />
-                    </div>
+                  <div style={{ width: '100%', marginBottom: '24px' }}>
+                    {(() => {
+                      const filteredListForStats = filteredStudentList(studentList);
+                      return (
+                        <div className="uxer-stats-grid">
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">TOTAL STUDENTS</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.length}</div>
+                              <div className="uxer-stat-badge">
+                                <div className="uxer-stat-badge-pill green"><TrendingUp className="w-3 h-3" style={{marginRight: '2px'}}/>+12%</div>
+                                <span className="uxer-stat-badge-text">from last week</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">ACTIVE STUDENTS</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
+                              <div className="uxer-stat-badge">
+                                <div className="uxer-stat-badge-pill green"><TrendingUp className="w-3 h-3" style={{marginRight: '2px'}}/>+5%</div>
+                                <span className="uxer-stat-badge-text">from last week</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">DROP-OUTS</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.filter(s => s.currentStatus === 'Drop-out').length}</div>
+                              <div className="uxer-stat-badge">
+                                <div className="uxer-stat-badge-pill red"><TrendingDown className="w-3 h-3" style={{marginRight: '2px'}}/>-2%</div>
+                                <span className="uxer-stat-badge-text">from last week</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">INACTIVE</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.filter(s => s.currentStatus === 'Inactive').length}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+
+                    {/* Toolbar: tabs + actions */}
+                    <div className="uxer-toolbar" style={{ marginBottom: '16px' }}>
+                      <div className="uxer-tabs">
+                        <div
+                          className={`uxer-tab ${(studentManagementTab === 'active' || !studentManagementTab) ? 'active' : ''}`}
+                          onClick={() => setStudentManagementTab('active')}
+                        >All</div>
+                        <div
+                          className={`uxer-tab ${studentManagementTab === 'only-active' ? 'active' : ''}`}
+                          onClick={() => setStudentManagementTab('only-active')}
+                        >Active</div>
+                        <div
+                          className={`uxer-tab ${studentManagementTab === 'inactive' ? 'active' : ''}`}
+                          onClick={() => setStudentManagementTab('inactive')}
+                        >Inactive</div>
+                        <div
+                          className={`uxer-tab ${studentManagementTab === 'dropout' ? 'active' : ''}`}
+                          onClick={() => setStudentManagementTab('dropout')}
+                        >Drop-Outs</div>
+                      </div>
+                      <div className="uxer-actions">
+                        <button className="uxer-action-btn" onClick={() => setStudentTextSearch('')}>
+                          <Filter className="w-4 h-4" style={{ marginRight: '6px' }} /> Filter <ChevronDown className="w-4 h-4" style={{ marginLeft: '4px' }} />
+                        </button>
+                        <button className="uxer-action-btn">
+                          <ArrowDownUp className="w-4 h-4" style={{ marginRight: '6px' }} /> Sort <ChevronDown className="w-4 h-4" style={{ marginLeft: '4px' }} />
+                        </button>
+                        <button
+                          className="uxer-action-btn"
+                          onClick={() => { setGlobalSearchAction('delete'); setGlobalSearchModalVisible(true); }}
+                        >
+                          <Trash2 className="w-4 h-4" style={{ marginRight: '6px' }} /> Bulk Delete
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Student Table Card */}
+                    {(() => {
+                      let list = studentList;
+                      if (studentManagementTab === 'only-active') list = list.filter(s => (s.currentStatus || 'Active') === 'Active');
+                      else if (studentManagementTab === 'inactive') list = list.filter(s => s.currentStatus === 'Inactive');
+                      else if (studentManagementTab === 'dropout') list = list.filter(s => s.currentStatus === 'Drop-out');
+                      const filtered = filteredStudentList(list);
+                      const totalRecords = filtered.length;
+                      const totalPages = Math.ceil(totalRecords / 10);
+                      const startIndex = (studentCurrentPage - 1) * 10;
+                      const currentRecords = filtered.slice(startIndex, startIndex + 10);
+                      
+                      return (
+                        <div className="uxer-table-card">
+                          <table className="uxer-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: '40px' }}><input type="checkbox" className="uxer-checkbox" /></th>
+                                <th>Student</th>
+                                <th>Course</th>
+                                <th>Batch</th>
+                                <th>Phone</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentRecords.length === 0 ? (
+                                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>No students found.</td></tr>
+                              ) : (
+                                currentRecords.map((s, i) => {
+                                  const initials = (s.name || 'S').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+                                  const status = s.currentStatus || 'Active';
+                                  const statusClass = status === 'Active' ? 'active' : status === 'Inactive' ? 'inactive' : 'dropout';
+                                  const statusLabel = status === 'Drop-out' ? 'Drop-Out' : status;
+                                  return (
+                                    <tr key={s.id || i}>
+                                      <td><input type="checkbox" className="uxer-checkbox" /></td>
+                                      <td>
+                                        <div className="uxer-student-cell">
+                                          <div className="uxer-avatar">{initials}</div>
+                                          <span className="uxer-student-name">{s.name || 'Unknown'}</span>
+                                        </div>
+                                      </td>
+                                      <td>{s.course || '-'}</td>
+                                      <td>{s.batch || '-'}</td>
+                                      <td>{s.phoneNumber || s.parentPhone || '-'}</td>
+                                      <td><span className={`uxer-status-pill ${statusClass}`}>{statusLabel}</span></td>
+                                      <td>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                          <button
+                                            onClick={() => { setEditingUser(s); editForm.setFieldsValue(s); setIsEditModalVisible(true); }}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '18px', letterSpacing: '2px' }}
+                                            title="Edit"
+                                          >...</button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                          {/* Pagination */}
+                          {totalRecords > 10 && (
+                            <div className="uxer-pagination">
+                              <button className="uxer-page-btn" disabled={studentCurrentPage === 1} onClick={() => setStudentCurrentPage(Math.max(1, studentCurrentPage - 1))}>&lt;</button>
+                              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                <button key={page} className={`uxer-page-btn ${studentCurrentPage === page ? 'active' : ''}`} onClick={() => setStudentCurrentPage(page)}>{page}</button>
+                              ))}
+                              <button className="uxer-page-btn" disabled={studentCurrentPage === totalPages} onClick={() => setStudentCurrentPage(Math.min(totalPages, studentCurrentPage + 1))}>&gt;</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                 </div>
               )}
 
               {activeTab === '3' && (
-                <div className="flex flex-col gap-8">
+                <div className="flex flex-col">
+                  <div className="uxer-toolbar">
+                    <div className="uxer-tabs">
+                      <div className="uxer-tab active">Course Management</div>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div className="uxer-table-card" style={{ padding: '24px' }}>
                       <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><BookOpen className="w-5 h-5 text-indigo-500" /> Create Custom Course</h3>
                       <Form form={courseForm} layout="vertical" onFinish={handleCreateCourse}>
                         <Form.Item name="name" label="Course Name" rules={[{ required: true }]}>
@@ -1584,7 +1624,7 @@ const AdminDashboard = () => {
                       </Form>
                     </div>
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div className="uxer-table-card" style={{ padding: '24px' }}>
                       <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><Calendar className="w-5 h-5 text-green-500" /> Assign Faculty to Course</h3>
                       <Form form={assignmentForm} layout="vertical" onFinish={handleCreateAssignment}>
                         <Form.Item name="courseName" label="Select Course or Module" rules={[{ required: true }]}>
@@ -1718,8 +1758,13 @@ const AdminDashboard = () => {
               )}
 
               {activeTab === 'view-courses' && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full course-catalog-container">
-                  <h3 className="text-lg font-semibold mb-4 text-slate-800">Master Course Catalog</h3>
+                <div className="flex flex-col">
+                  <div className="uxer-toolbar">
+                    <div className="uxer-tabs">
+                      <div className="uxer-tab active">Master Course Catalog</div>
+                    </div>
+                  </div>
+                  <div className="uxer-table-card course-catalog-container" style={{ padding: '24px' }}>
                   <Collapse 
                     className="course-accordion bg-slate-50 border-slate-200"
                     items={courseList.map(course => ({
@@ -1747,6 +1792,7 @@ const AdminDashboard = () => {
                       )
                     }))}
                   />
+                  </div>
                 </div>
               )}
 
@@ -1898,49 +1944,55 @@ const AdminDashboard = () => {
               })()}
 
               {activeTab === 'billing' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="flex flex-col">
                   
                   {/* Annual Financial Overview */}
-                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                      <p style={{ margin: '0 0 8px 0', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Cumulative Fees Collected</p>
-                      <h2 style={{ margin: 0, fontSize: '32px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>
-                        ₹{studentList.reduce((sum, s) => sum + (s.paidFee || 0), 0).toLocaleString()}
-                      </h2>
+                  <div className="uxer-stats-grid" style={{ marginBottom: '24px' }}>
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">Cumulative Fees Collected</div>
+                      <div className="uxer-stat-content">
+                        <div className="uxer-stat-value">
+                          ₹{studentList.reduce((sum, s) => sum + (s.paidFee || 0), 0).toLocaleString()}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ flex: 1, backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                      <p style={{ margin: '0 0 8px 0', color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Overdue Pending</p>
-                      <h2 style={{ margin: 0, fontSize: '32px', color: 'var(--red-600, #dc2626)', fontWeight: 'bold' }}>
-                        ₹{studentList.reduce((sum, s) => { const pending = (s.courseFee || 28000) - (s.paidFee || 0); return sum + (pending > 0 ? pending : 0); }, 0).toLocaleString()}
-                      </h2>
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">Total Overdue Pending</div>
+                      <div className="uxer-stat-content">
+                        <div className="uxer-stat-value" style={{ color: 'var(--red-600, #dc2626)' }}>
+                          ₹{studentList.reduce((sum, s) => { const pending = (s.courseFee || 28000) - (s.paidFee || 0); return sum + (pending > 0 ? pending : 0); }, 0).toLocaleString()}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Dual Partition UI Tabs */}
-                  <div style={{ display: 'flex', borderBottom: '2px solid var(--border-color)', gap: '32px' }}>
-                    <button 
-                      onClick={() => setBillingTab('ledger')}
-                      style={{ padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: billingTab === 'ledger' ? 'var(--blue-600, #2563eb)' : 'var(--text-secondary)', borderBottom: billingTab === 'ledger' ? '3px solid var(--blue-600, #2563eb)' : '3px solid transparent', marginBottom: '-2px' }}
-                    >
-                      Comprehensive Ledger
-                    </button>
-                    <button 
-                      onClick={() => setBillingTab('due_list')}
-                      style={{ padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: billingTab === 'due_list' ? 'var(--blue-600, #2563eb)' : 'var(--text-secondary)', borderBottom: billingTab === 'due_list' ? '3px solid var(--blue-600, #2563eb)' : '3px solid transparent', marginBottom: '-2px' }}
-                    >
-                      Fees Not Paid / Due List
-                    </button>
+                  {/* Toolbar & Tabs */}
+                  <div className="uxer-toolbar">
+                    <div className="uxer-tabs">
+                      <div 
+                        className={`uxer-tab ${billingTab === 'ledger' ? 'active' : ''}`}
+                        onClick={() => setBillingTab('ledger')}
+                      >
+                        Comprehensive Ledger
+                      </div>
+                      <div 
+                        className={`uxer-tab ${billingTab === 'due_list' ? 'active' : ''}`}
+                        onClick={() => setBillingTab('due_list')}
+                      >
+                        Fees Not Paid / Due List
+                      </div>
+                    </div>
                   </div>
 
                   {/* Tab 1: Comprehensive Ledger */}
                   {billingTab === 'ledger' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                        <button onClick={downloadTodaysCollectionCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                          <Download className="w-4 h-4" /> Download Today's Collection
+                      <div className="uxer-actions" style={{ justifyContent: 'flex-end' }}>
+                        <button onClick={downloadTodaysCollectionCSV} className="uxer-action-btn">
+                          <Download className="w-4 h-4" style={{ marginRight: '6px' }} /> Download Today's Collection
                         </button>
-                        <button onClick={downloadStudentLedgerCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                          <Download className="w-4 h-4" /> Track Ledger
+                        <button onClick={downloadStudentLedgerCSV} className="uxer-action-btn">
+                          <Download className="w-4 h-4" style={{ marginRight: '6px' }} /> Track Ledger
                         </button>
                       </div>
 
@@ -1957,8 +2009,8 @@ const AdminDashboard = () => {
                           const totalOutstanding = rows.reduce((sum, r) => sum + (Number(r.balance) || 0), 0);
 
                           return (
-                            <div key={month} style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                              <div style={{ padding: '16px 24px', backgroundColor: 'var(--theme-bg-premium)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                            <div key={month} className="uxer-table-card">
+                              <div style={{ padding: '16px 24px', backgroundColor: 'var(--uxer-card)', borderBottom: '1px solid var(--uxer-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>{month} Ledger</h3>
                                 <div style={{ display: 'flex', gap: '16px' }}>
                                   <div style={{ padding: '8px 16px', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--green-600, #16a34a)', borderRadius: '8px', fontWeight: 'bold' }}>
@@ -2075,8 +2127,8 @@ const AdminDashboard = () => {
 
                   {/* Tab 2: Fees Not Paid / Due List */}
                   {billingTab === 'due_list' && (
-                    <div style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                      <div style={{ padding: '20px 24px', backgroundColor: 'var(--theme-bg-premium)', borderBottom: '1px solid var(--border-color)' }}>
+                    <div className="uxer-table-card">
+                      <div style={{ padding: '20px 24px', backgroundColor: 'var(--uxer-card)', borderBottom: '1px solid var(--uxer-border)' }}>
                         <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>Outstanding Due List</h3>
                         <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '14px' }}>Automatically tracked isolated list of students with pending balances.</p>
                       </div>
@@ -2095,7 +2147,7 @@ const AdminDashboard = () => {
                           <tbody>
                             {studentList.filter(s => ((s.courseFee || 28000) - (s.paidFee || 0)) > 0).length === 0 ? (
                               <tr>
-                                <td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No outstanding dues across any students! 🎉</td>
+                                <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>No outstanding dues across any students! 🎉</td>
                               </tr>
                             ) : (
                               studentList.filter(s => ((s.courseFee || 28000) - (s.paidFee || 0)) > 0).map(s => {
@@ -2123,10 +2175,13 @@ const AdminDashboard = () => {
               )}
 
               {activeTab === 'settings' && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 w-full">
-                  <h3 className="text-xl font-semibold mb-6 text-slate-800 flex items-center gap-2">
-                    <Settings className="w-6 h-6 text-indigo-500" /> Organization Settings
-                  </h3>
+                <div className="flex flex-col">
+                  <div className="uxer-toolbar">
+                    <div className="uxer-tabs">
+                      <div className="uxer-tab active">Organization Settings</div>
+                    </div>
+                  </div>
+                  <div className="uxer-table-card" style={{ padding: '24px' }}>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {/* Logo Upload Widget */}
@@ -2217,67 +2272,48 @@ const AdminDashboard = () => {
                       <Button className="border-slate-300 text-slate-600 w-full" disabled>Change Password (Coming Soon)</Button>
                     </div>
                   </div>
+                  </div>
                 </div>
               )}
 
               {activeTab === 'journey' && (
-                <div style={{ backgroundColor: 'var(--panel-solid-white)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '24px' }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                     <h3 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: 'var(--text-main)' }}>Student Journey Hub</h3>
-                     <div style={{ display: 'flex', gap: '12px' }}>
-                       <button 
-                         onClick={() => {
-                           const filteredJourneyStudents = studentList.filter(s => {
-                             if (!journeySearchQuery) return true;
-                             const q = journeySearchQuery.toLowerCase();
-                             return (s.name || '').toLowerCase().includes(q) || 
-                                    (s.enrollmentNo || '').toLowerCase().includes(q) || 
-                                    (s.phoneNumber || '').includes(q) ||
-                                    (s.batch || '').toLowerCase().includes(q);
-                           });
-                           handleBulkSingleCSV(filteredJourneyStudents);
-                         }}
-                         style={{ padding: '8px 16px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
-                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'}
-                       >
-                         <Download className="w-4 h-4" style={{ color: 'var(--green-600, #16a34a)' }} /> Download All (Single CSV)
-                       </button>
-                       <button 
-                         onClick={() => {
-                           const filteredJourneyStudents = studentList.filter(s => {
-                             if (!journeySearchQuery) return true;
-                             const q = journeySearchQuery.toLowerCase();
-                             return (s.name || '').toLowerCase().includes(q) || 
-                                    (s.enrollmentNo || '').toLowerCase().includes(q) || 
-                                    (s.phoneNumber || '').includes(q) ||
-                                    (s.batch || '').toLowerCase().includes(q);
-                           });
-                           handleBulkSeparateCSV(filteredJourneyStudents);
-                         }}
-                         style={{ padding: '8px 16px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
-                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--theme-bg-premium)'}
-                       >
-                         <Download className="w-4 h-4" style={{ color: 'var(--blue-600, #2563eb)' }} /> Download All Profiles (Separate CSVs)
-                       </button>
-                     </div>
-                   </div>
-                   
-                    <div className="search-bar-wrapper" style={{ marginBottom: '32px', maxWidth: '600px' }}>
-                      <Search className="search-bar-icon" />
-                      <input 
-                        className="search-bar-input"
-                        type="text" 
-                        placeholder="Search by Name, ID, Mobile, or Batch..." 
-                        value={journeySearchQuery}
-                        onChange={(e) => {
-                          setJourneySearchQuery(e.target.value);
-                          if (!e.target.value) setSelectedJourneyStudent(null);
-                        }}
-                        style={{ width: '100%', paddingTop: '14px', paddingRight: '14px', paddingBottom: '14px', paddingLeft: '40px', border: '1px solid var(--border-color)', borderRadius: '8px', boxSizing: 'border-box', fontSize: '16px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
-                      />
+                <div className="flex flex-col">
+                  <div className="uxer-toolbar">
+                    <div className="uxer-tabs">
+                      <div className="uxer-tab active">Student Journey Hub</div>
                     </div>
+                    <div className="uxer-actions">
+                      <div className="uxer-search">
+                        <Search className="w-4 h-4" style={{ color: 'var(--uxer-text-muted)' }} />
+                        <input 
+                          type="text" 
+                          placeholder="Search by Name, ID, Mobile..." 
+                          value={journeySearchQuery}
+                          onChange={(e) => {
+                            setJourneySearchQuery(e.target.value);
+                            if (!e.target.value) setSelectedJourneyStudent(null);
+                          }}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const filteredJourneyStudents = studentList.filter(s => {
+                            if (!journeySearchQuery) return true;
+                            const q = journeySearchQuery.toLowerCase();
+                            return (s.name || '').toLowerCase().includes(q) || 
+                                   (s.enrollmentNo || '').toLowerCase().includes(q) || 
+                                   (s.phoneNumber || '').includes(q) ||
+                                   (s.batch || '').toLowerCase().includes(q);
+                          });
+                          handleBulkSingleCSV(filteredJourneyStudents);
+                        }}
+                        className="uxer-action-btn"
+                      >
+                        <Download className="w-4 h-4 text-green-600 mr-2" /> Download All
+                      </button>
+                    </div>
+                  </div>
+                  <div className="uxer-table-card" style={{ padding: '24px' }}>
                       
                     {/* Default Roster List */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2339,10 +2375,11 @@ const AdminDashboard = () => {
                                (s.phoneNumber || '').includes(q) ||
                                (s.batch || '').toLowerCase().includes(q);
                       }).length === 0 && (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>No students found matching your criteria.</div>
+                        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>No students found matching your criteria.</div>
                       )}
                     </div>
                   </div>
+                </div>
               )}
 
       {/* Journey Profile Modal Overlay */}
@@ -2376,7 +2413,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Scrollable Content */}
-            <div style={{ padding: '32px' }}>
+            <div style={{ padding: '20px' }}>
               <div style={{ position: 'relative', paddingLeft: '40px' }}>
                  {/* Timeline Line */}
                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: '15px', width: '2px', backgroundColor: 'var(--border-color)' }}></div>
@@ -2570,65 +2607,79 @@ const AdminDashboard = () => {
       )}
 
       {activeTab === 'admission' && (
-        <div className="native-module-container">
+        <div className="flex flex-col">
+          <div className="uxer-toolbar">
+            <div className="uxer-tabs">
+              <div className="uxer-tab active">Student Admission & Enrollment</div>
+            </div>
+          </div>
           {/* Analytics Section */}
-          <div className="native-stats-grid">
-            <div className="native-stat-card" style={{ position: 'relative' }}>
-              <div className="native-stat-value">
-                {studentList.filter(s => {
-                  const d = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
-                  return d && d.startsWith(new Date().toISOString().split('T')[0]);
-                }).length}
+          <div className="uxer-stats-grid" style={{ marginBottom: '24px' }}>
+            <div className="uxer-stat-card" style={{ position: 'relative' }}>
+              <div className="uxer-stat-title">Today's Admissions</div>
+              <div className="uxer-stat-content">
+                <div className="uxer-stat-value">
+                  {studentList.filter(s => {
+                    const d = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                    return d && d.startsWith(new Date().toISOString().split('T')[0]);
+                  }).length}
+                </div>
               </div>
-              <div className="native-stat-label">Today's Admissions</div>
               <button 
                 onClick={() => { 
                   const d = new Date();
                   setDrillDownPath([String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), `Week ${getISOWeekNumber(d)}`, String(d.getDate()).padStart(2, '0')]); 
                   setIsAdmissionSummaryModalVisible(true); 
                 }}
-                style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                className="uxer-action-btn"
+                style={{ position: 'absolute', top: '16px', right: '16px', height: '28px', padding: '0 12px', fontSize: '12px' }}
               >View</button>
             </div>
-            <div className="native-stat-card" style={{ position: 'relative' }}>
-              <div className="native-stat-value">
-                {studentList.filter(s => {
-                  const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
-                  return d && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
-                }).length}
+            <div className="uxer-stat-card" style={{ position: 'relative' }}>
+              <div className="uxer-stat-title">This Month</div>
+              <div className="uxer-stat-content">
+                <div className="uxer-stat-value">
+                  {studentList.filter(s => {
+                    const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
+                    return d && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
+                  }).length}
+                </div>
               </div>
-              <div className="native-stat-label">This Month</div>
               <button 
                 onClick={() => { 
                   const d = new Date();
                   setDrillDownPath([String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0')]); 
                   setIsAdmissionSummaryModalVisible(true); 
                 }}
-                style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                className="uxer-action-btn"
+                style={{ position: 'absolute', top: '16px', right: '16px', height: '28px', padding: '0 12px', fontSize: '12px' }}
               >View</button>
             </div>
-            <div className="native-stat-card" style={{ position: 'relative' }}>
-              <div className="native-stat-value">
-                {studentList.filter(s => {
-                  const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
-                  return d && d.getFullYear() === new Date().getFullYear();
-                }).length}
+            <div className="uxer-stat-card" style={{ position: 'relative' }}>
+              <div className="uxer-stat-title">This Year</div>
+              <div className="uxer-stat-content">
+                <div className="uxer-stat-value">
+                  {studentList.filter(s => {
+                    const d = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
+                    return d && d.getFullYear() === new Date().getFullYear();
+                  }).length}
+                </div>
               </div>
-              <div className="native-stat-label">This Year</div>
               <button 
                 onClick={() => { 
                   const d = new Date();
                   setDrillDownPath([String(d.getFullYear())]); 
                   setIsAdmissionSummaryModalVisible(true); 
                 }}
-                style={{ position: 'absolute', top: '16px', right: '16px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                className="uxer-action-btn"
+                style={{ position: 'absolute', top: '16px', right: '16px', height: '28px', padding: '0 12px', fontSize: '12px' }}
               >View</button>
             </div>
           </div>
 
           {/* Form Section */}
-          <div className="native-form-card">
-            <h2 className="native-form-title">New Student Admission</h2>
+          <div className="uxer-table-card" style={{ padding: '24px' }}>
+            <h3 style={{ margin: '0 0 24px 0', fontSize: '18px', fontWeight: 'bold' }}>New Student Admission</h3>
             <form onSubmit={async (e) => {
               e.preventDefault();
               setLoading(true);
@@ -2667,22 +2718,22 @@ const AdminDashboard = () => {
               <div className="native-form-grid">
                 {/* Row 1: Student Identity */}
                 <div className="native-form-group">
-                  <label className="native-form-label">Enrollment Number *</label>
-                  <input type="text" name="enrollmentNo" className="native-form-input" required placeholder="e.g. ENR-2024-001" />
+                  <label className="uxer-form-label">Enrollment Number *</label>
+                  <input type="text" name="enrollmentNo" className="uxer-form-input" required placeholder="e.g. ENR-2024-001" />
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Student Name *</label>
-                  <input type="text" name="name" className="native-form-input" required placeholder="Full Name" />
+                  <label className="uxer-form-label">Student Name *</label>
+                  <input type="text" name="name" className="uxer-form-input" required placeholder="Full Name" />
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Date of Birth</label>
-                  <input type="date" name="dob" className="native-form-input" />
+                  <label className="uxer-form-label">Date of Birth</label>
+                  <input type="date" name="dob" className="uxer-form-input" />
                 </div>
 
                 {/* Row 2: Personal/Contact */}
                 <div className="native-form-group">
-                  <label className="native-form-label">Gender *</label>
-                  <select name="gender" className="native-form-select" required>
+                  <label className="uxer-form-label">Gender *</label>
+                  <select name="gender" className="uxer-form-select" required>
                     <option value="">Select Gender</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
@@ -2690,53 +2741,53 @@ const AdminDashboard = () => {
                   </select>
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Mobile Number *</label>
-                  <input type="text" name="phoneNumber" className="native-form-input" required placeholder="+91..." />
+                  <label className="uxer-form-label">Mobile Number *</label>
+                  <input type="text" name="phoneNumber" className="uxer-form-input" required placeholder="+91..." />
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Email Address</label>
-                  <input type="email" name="email" className="native-form-input" placeholder="student@example.com" />
+                  <label className="uxer-form-label">Email Address</label>
+                  <input type="email" name="email" className="uxer-form-input" placeholder="student@example.com" />
                 </div>
 
                 {/* Row 3: Academic/Course */}
                 <div className="native-form-group">
-                  <label className="native-form-label">Course Selection *</label>
-                  <select name="course" className="native-form-select" required>
+                  <label className="uxer-form-label">Course Selection *</label>
+                  <select name="course" className="uxer-form-select" required>
                     <option value="">Select Course</option>
                     {courseList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Batch *</label>
-                  <input type="text" name="batch" className="native-form-input" required placeholder="e.g. 2025-2028 or Morning Batch" />
+                  <label className="uxer-form-label">Batch *</label>
+                  <input type="text" name="batch" className="uxer-form-input" required placeholder="e.g. 2025-2028 or Morning Batch" />
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Course Fee *</label>
-                  <input type="number" name="courseFee" className="native-form-input" required placeholder="e.g. 25000" />
+                  <label className="uxer-form-label">Course Fee *</label>
+                  <input type="number" name="courseFee" className="uxer-form-input" required placeholder="e.g. 25000" />
                 </div>
 
                 {/* Row 4: Admission Info */}
                 <div className="native-form-group">
-                  <label className="native-form-label">Join Date *</label>
-                  <input type="date" name="dateOfJoining" className="native-form-input" required defaultValue={new Date().toISOString().split('T')[0]} />
+                  <label className="uxer-form-label">Join Date *</label>
+                  <input type="date" name="dateOfJoining" className="uxer-form-input" required defaultValue={new Date().toISOString().split('T')[0]} />
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Admission Month</label>
-                  <input type="month" name="admissionMonth" className="native-form-input" defaultValue={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`} />
+                  <label className="uxer-form-label">Admission Month</label>
+                  <input type="month" name="admissionMonth" className="uxer-form-input" defaultValue={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`} />
                 </div>
                 <div className="native-form-group">
-                  <label className="native-form-label">Parent Mobile Number</label>
-                  <input type="text" name="parentPhone" className="native-form-input" placeholder="+91..." />
+                  <label className="uxer-form-label">Parent Mobile Number</label>
+                  <input type="text" name="parentPhone" className="uxer-form-input" placeholder="+91..." />
                 </div>
 
                 {/* Row 5: Extra */}
                 <div className="native-form-group" style={{ gridColumn: '1 / -1' }}>
-                  <label className="native-form-label">Remarks</label>
-                  <textarea name="remarks" className="native-form-textarea" rows="3" placeholder="Any special notes..."></textarea>
+                  <label className="uxer-form-label">Remarks</label>
+                  <textarea name="remarks" className="uxer-form-textarea" rows="3" placeholder="Any special notes..."></textarea>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="submit" className="native-form-submit" disabled={loading}>
+                <button type="submit" className="uxer-action-btn" disabled={loading}>
                   {loading ? 'Processing...' : 'Complete Admission'}
                 </button>
               </div>
@@ -2746,16 +2797,17 @@ const AdminDashboard = () => {
       )}
 
       {activeTab === 'reports' && (
-        <div className="native-module-container">
-          <h2 className="native-form-title">Advanced Reporting Module</h2>
-          <div className="native-tabs-nav">
-            <button className={`native-tab-btn ${activeReportTab === 'admission' ? 'active' : ''}`} onClick={() => setActiveReportTab('admission')}>Admission Reports</button>
-            <button className={`native-tab-btn ${activeReportTab === 'defaulters' ? 'active' : ''}`} onClick={() => setActiveReportTab('defaulters')}>Fee Defaulters</button>
-            <button className={`native-tab-btn ${activeReportTab === 'attendance' ? 'active' : ''}`} onClick={() => setActiveReportTab('attendance')}>Attendance Reports</button>
-            <button className={`native-tab-btn ${activeReportTab === 'marks' ? 'active' : ''}`} onClick={() => setActiveReportTab('marks')}>Performance & Marks</button>
+        <div className="flex flex-col">
+          <div className="uxer-toolbar">
+            <div className="uxer-tabs">
+              <div className={`uxer-tab ${activeReportTab === 'admission' ? 'active' : ''}`} onClick={() => setActiveReportTab('admission')}>Admission Reports</div>
+              <div className={`uxer-tab ${activeReportTab === 'defaulters' ? 'active' : ''}`} onClick={() => setActiveReportTab('defaulters')}>Fee Defaulters</div>
+              <div className={`uxer-tab ${activeReportTab === 'attendance' ? 'active' : ''}`} onClick={() => setActiveReportTab('attendance')}>Attendance Reports</div>
+              <div className={`uxer-tab ${activeReportTab === 'marks' ? 'active' : ''}`} onClick={() => setActiveReportTab('marks')}>Performance & Marks</div>
+            </div>
           </div>
 
-          <div className="native-form-card">
+          <div className="uxer-table-card" style={{ padding: '24px' }}>
             {activeReportTab === 'admission' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 {(() => {
@@ -2834,8 +2886,8 @@ const AdminDashboard = () => {
                   </select>
                 </div>
 
-                <div className="native-table-wrapper">
-                  <table className="native-table">
+                <div className="uxer-table-wrapper">
+                  <table className="uxer-table">
                     <thead>
                       <tr>
                         <th>Date</th>
@@ -2886,8 +2938,8 @@ const AdminDashboard = () => {
                   </select>
                 </div>
 
-                <div className="native-table-wrapper">
-                  <table className="native-table">
+                <div className="uxer-table-wrapper">
+                  <table className="uxer-table">
                     <thead>
                       <tr>
                         <th>Student Name</th>
@@ -2916,7 +2968,7 @@ const AdminDashboard = () => {
                             <td>₹{courseFee}</td>
                             <td style={{ color: 'var(--green-600)' }}>₹{paid}</td>
                             <td style={{ color: 'var(--red-600)', fontWeight: 'bold' }}>₹{pending}</td>
-                            <td><button className="native-tab-btn" style={{ border: '1px solid var(--border-color)' }}>Send Reminder</button></td>
+                            <td><button className="uxer-tab" style={{ border: '1px solid var(--border-color)' }}>Send Reminder</button></td>
                           </tr>
                          );
                       })}
@@ -3074,8 +3126,8 @@ const AdminDashboard = () => {
               })()}
 
             {activeReportTab === 'staff_attendance' && (
-              <div className="native-table-wrapper">
-                <table className="native-table">
+              <div className="uxer-table-wrapper">
+                <table className="uxer-table">
                   <thead>
                     <tr>
                       <th>Staff Name</th>
@@ -3107,8 +3159,8 @@ const AdminDashboard = () => {
             )}
 
             {activeReportTab === 'marks' && (
-              <div className="native-table-wrapper">
-                <table className="native-table">
+              <div className="uxer-table-wrapper">
+                <table className="uxer-table">
                   <thead>
                     <tr>
                       <th>Student Name</th>
@@ -3145,9 +3197,9 @@ const AdminDashboard = () => {
       )}
 
       {activeTab === 'marks' && (
-        <div className="native-module-container">
+        <div className="flex flex-col">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-            <h2 className="native-form-title" style={{ margin: 0 }}>Marks Management</h2>
+            <h2 className="uxer-form-title" style={{ margin: 0 }}>Marks Management</h2>
             <button 
               onClick={() => {
                 const flatMarks = studentList.filter(s => {
@@ -3202,7 +3254,7 @@ const AdminDashboard = () => {
 
           <div className="native-form-card" style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <div className="native-form-input" style={{ margin: 0, display: 'flex', alignItems: 'center', flex: 1, padding: '0 12px' }}>
+              <div className="uxer-form-input" style={{ margin: 0, display: 'flex', alignItems: 'center', flex: 1, padding: '0 12px' }}>
                 <Search className="w-5 h-5 text-slate-400" style={{ flexShrink: 0 }} />
                 <input 
                   type="text" 
@@ -3216,7 +3268,7 @@ const AdminDashboard = () => {
               </div>
               <div style={{ width: '250px', flexShrink: 0 }}>
                 <select 
-                  className="native-form-select" 
+                  className="uxer-form-select" 
                   value={marksCourseFilter} 
                   onChange={(e) => setMarksCourseFilter(e.target.value)}
                   style={{ width: '100%', margin: 0 }}
@@ -3231,8 +3283,8 @@ const AdminDashboard = () => {
           </div>
           
           <div className="native-form-card">
-            <div className="native-table-wrapper">
-              <table className="native-table">
+            <div className="uxer-table-wrapper">
+              <table className="uxer-table">
                 <thead>
                   <tr>
                     <th>Student Name</th>
@@ -3288,9 +3340,11 @@ const AdminDashboard = () => {
       )}
           </div>
         </div>
+      </main>
+
       {isAdmissionSummaryModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '800px', maxWidth: '94%', borderRadius: '12px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '800px', maxWidth: '94%', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
             
             <button 
               onClick={() => setIsAdmissionSummaryModalVisible(false)}
@@ -3390,11 +3444,11 @@ const AdminDashboard = () => {
                           {item.date && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{new Date(item.date).toLocaleDateString()}</div>}
                         </div>
                       ))}
-                      {drillDownData.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#64748b', padding: '40px' }}>No records found for this period.</div>}
+                      {drillDownData.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#64748b', padding: '24px' }}>No records found for this period.</div>}
                     </div>
                   ) : (
-                    <div className="native-table-wrapper">
-                      <table className="native-table">
+                    <div className="uxer-table-wrapper">
+                      <table className="uxer-table">
                         <thead>
                           <tr>
                             <th>Date</th>
@@ -3452,8 +3506,6 @@ const AdminDashboard = () => {
           </div>
         </div>
       )}
-      </main>
-
     {isEditModalVisible && (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
@@ -3960,6 +4012,7 @@ const AdminDashboard = () => {
 
 
     </div>
+    </>
   );
 };
 
