@@ -156,10 +156,10 @@ const SuperAdminDashboard = () => {
               <Form.Item name="name" label="Admin Name" rules={[{ required: true }]}>
                 <Input placeholder="Enter admin name" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
-              <Form.Item name="email" label="Admin Email" rules={[{ required: true, type: 'email' }]}>
+              <Form.Item name="email" label="Admin Email" rules={[{ required: true, pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: 'Please enter a valid Email address' }]}>
                 <Input placeholder="Enter admin email" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
-              <Form.Item name="phoneNumber" label="Admin Phone Number" rules={[{ required: true, message: 'Please input phone number' }]}>
+              <Form.Item name="phoneNumber" label="Admin Phone Number" rules={[{ required: true, pattern: /^[6-9]\d{9}$/, message: 'Please enter a valid 10-digit mobile number' }]}>
                 <Input placeholder="Enter admin phone number" size="large"  className="saas-v3-form-input"/>
               </Form.Item>
               <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">

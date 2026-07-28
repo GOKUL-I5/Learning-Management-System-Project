@@ -21,10 +21,11 @@ const AnimatedRoutes = () => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         if (!user) {
-          localStorage.removeItem('lms_user');
-          localStorage.removeItem('pending_user');
-          if (location.pathname !== '/login' && location.pathname !== '/') {
-             navigate('/login', { replace: true });
+          const hasLocalSession = localStorage.getItem('lms_user') || localStorage.getItem('pending_user');
+          if (!hasLocalSession) {
+            if (location.pathname !== '/login' && location.pathname !== '/') {
+               navigate('/login', { replace: true });
+            }
           }
         }
       } catch (error) {
@@ -56,7 +57,7 @@ const AnimatedRoutes = () => {
         } />
         
         <Route path="/staff" element={
-          <ProtectedRoute allowedRoles={['staff']}>
+          <ProtectedRoute allowedRoles={['staff', 'faculty']}>
             <StaffDashboard />
           </ProtectedRoute>
         } />

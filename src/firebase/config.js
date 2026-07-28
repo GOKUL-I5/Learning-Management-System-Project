@@ -4,13 +4,13 @@ import { getAuth, setPersistence, indexedDBLocalPersistence } from "firebase/aut
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCemvKMO2oBFxY1j69_ON2EVjtfZ6kM01k",
-  authDomain: "lmscorelearn.firebaseapp.com",
-  projectId: "lmscorelearn",
-  storageBucket: "lmscorelearn.firebasestorage.app",
-  messagingSenderId: "575736749645",
-  appId: "1:575736749645:web:3bf259c0fedd30afdb4604",
-  measurementId: "G-JCPREGTGFG"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);

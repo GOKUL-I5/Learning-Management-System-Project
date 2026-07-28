@@ -17,6 +17,7 @@ const Login = () => {
   const [identifier, setIdentifier] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [reAuthOverlayVisible, setReAuthOverlayVisible] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -42,8 +43,8 @@ const Login = () => {
     if (e) e.preventDefault();
     setLoading(true);
     try {
-      if (!identifier || !/^[0-9+\-\s()]+$/.test(identifier)) {
-        setErrorMsg('Please enter a valid phone number!');
+      if (!identifier || !/^[6-9]\d{9}$/.test(identifier)) {
+        setErrorMsg('Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.');
         setLoading(false);
         return;
       }
@@ -85,7 +86,18 @@ const Login = () => {
       if (result?.user) {
         const superAdmins = ['santhanabharaths@gmail.com', 'ksquarestudio2025@gmail.com'];
         if (superAdmins.includes(result.user.email)) {
-          const userData = await ensureSuperAdminInFirestore(result.user.email, result.user.displayName);
+          let userData;
+          try {
+            userData = await ensureSuperAdminInFirestore(result.user.email, result.user.displayName);
+          } catch (e) {
+            console.warn("Failed to ensure super admin in firestore (permissions issue):", e);
+            userData = {
+              id: 'superadmin_id',
+              email: result.user.email,
+              name: result.user.displayName || 'Super Admin',
+              role: 'superadmin'
+            };
+          }
           localStorage.setItem('lms_user', JSON.stringify(userData));
           navigate('/admin-dashboard', { replace: true });
           return;
@@ -104,9 +116,59 @@ const Login = () => {
       console.warn('Google Sign-In Error:', error);
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request' || (error.message && error.message.includes('Cross-Origin-Opener-Policy'))) {
         setErrorMsg("Authentication popup was interrupted. Please click 'Continue with Google' again.");
+      } else if (
+        error.code === 'auth/requires-recent-login' || 
+        error.code === 'auth/user-token-expired' || 
+        error.code === 'auth/invalid-user-token' ||
+        (error.message && error.message.includes('token'))
+      ) {
+        setReAuthOverlayVisible(true);
       } else {
         setErrorMsg("Google Sign-In failed. Please try again.");
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReAuth = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result?.user) {
+        setReAuthOverlayVisible(false);
+        const superAdmins = ['santhanabharaths@gmail.com', 'ksquarestudio2025@gmail.com'];
+        if (superAdmins.includes(result.user.email)) {
+          let userData;
+          try {
+            userData = await ensureSuperAdminInFirestore(result.user.email, result.user.displayName);
+          } catch (e) {
+            console.warn("Failed to ensure super admin in firestore (permissions issue):", e);
+            userData = {
+              id: 'superadmin_id',
+              email: result.user.email,
+              name: result.user.displayName || 'Super Admin',
+              role: 'superadmin'
+            };
+          }
+          localStorage.setItem('lms_user', JSON.stringify(userData));
+          navigate('/admin-dashboard', { replace: true });
+          return;
+        }
+        
+        try {
+          await identifyUser(result.user.email);
+          navigate('/verify-code', { replace: true });
+        } catch (dbError) {
+          navigate('/access-denied', { replace: true });
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('Re-auth error:', error);
+      setErrorMsg("Verification failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -136,8 +198,20 @@ const Login = () => {
               <input 
                 type="text"
                 value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="Enter your Phone Number" 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // If user typed non-digits, warn immediately
+                  if (/[^\d]/.test(val)) {
+                    setErrorMsg('Please enter a valid 10-digit mobile number (digits only)');
+                  } else {
+                    setErrorMsg('');
+                  }
+                  const digitsOnly = val.replace(/\D/g, '');
+                  if (digitsOnly.length <= 10) {
+                    setIdentifier(digitsOnly);
+                  }
+                }}
+                placeholder="Enter your 10-digit Phone Number" 
                 className="saas-v3-form-input" 
                 style={{ paddingLeft: '44px' }}
                 required
@@ -179,6 +253,38 @@ const Login = () => {
           </button>
         </form>
       </div>
+
+      {reAuthOverlayVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ backgroundColor: '#fff', padding: '32px', borderRadius: '16px', maxWidth: '400px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ width: '48px', height: '48px', backgroundColor: '#fef2f2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <KeyRound style={{ color: '#ef4444', width: '24px', height: '24px' }} />
+            </div>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#111827', textAlign: 'center', margin: '0 0 12px 0' }}>Session Expired</h2>
+            <p style={{ fontSize: '15px', color: '#4b5563', textAlign: 'center', margin: '0 0 24px 0', lineHeight: '1.5' }}>
+              Your Google session has expired due to a recent security update. Please verify your updated Gmail password to refresh your session.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', flexDirection: 'column' }}>
+              <button 
+                onClick={handleReAuth}
+                disabled={loading}
+                className="saas-v3-btn-solid"
+                style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px' }}
+              >
+                {loading ? 'Verifying...' : 'Verify via Google'}
+              </button>
+              <button 
+                onClick={() => setReAuthOverlayVisible(false)}
+                disabled={loading}
+                className="saas-v3-btn-outline"
+                style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

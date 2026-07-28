@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { createStudent, logoutUser, getOrganizationStudents, deleteUserDoc, updateUserDoc, getStaffAssignments, updateCourseAssignment, getOrganizationDetails, saveAttendanceHistory, getAttendanceHistoryByFaculty, createReceipt, listenToOrganizationStatus, logTransaction, getOrganizationCourses, addStudentMarks } from '../../firebase/services';
-import { LogOut, Calendar as CalendarIcon, Clock, Users, BookOpen, ChevronRight, Upload as UploadIcon, FileText, ClipboardList, Pencil, Download, CheckCircle, XCircle, GraduationCap, UploadCloud, FileSpreadsheet, Calendar, Video, ArrowLeft, Mic, MicOff, Monitor, Paperclip, CheckCircle2, Trash2, ChevronDown, UserCheck, AlertCircle, Banknote, Search, Award, Filter, ArrowDownUp, Moon, Bell } from 'lucide-react';
+import { createStudent, logoutUser, getOrganizationStudents, subscribeToOrganizationStudents, deleteUserDoc, updateUserDoc, getStaffAssignments, updateCourseAssignment, getOrganizationDetails, saveAttendanceHistory, getAttendanceHistoryByFaculty, createReceipt, listenToOrganizationStatus, logTransaction, getOrganizationCourses, addStudentMarks, uploadCourseMaterial, addDynamicStudentMarks, getCourseMaterialsForStaff } from '../../firebase/services';
+import { LogOut, Calendar as CalendarIcon, Clock, Users, BookOpen, ChevronRight, Upload as UploadIcon, FileText, ClipboardList, Pencil, Download, CheckCircle, XCircle, GraduationCap, UploadCloud, FileSpreadsheet, Calendar, Video, ArrowLeft, Mic, MicOff, Monitor, Paperclip, CheckCircle2, Trash2, ChevronDown, UserCheck, AlertCircle, Banknote, Search, Award, Filter, ArrowDownUp, Moon, Bell, X, Eye, TrendingUp, TrendingDown } from 'lucide-react';
 import Papa from 'papaparse';
 import './StaffDashboard.css';
 
@@ -22,6 +22,51 @@ const useNativeForm = () => {
       resetFields: () => setData({})
     }
   ];
+};
+
+const CustomPagination = ({ currentPage, totalItems, itemsPerPage, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', marginTop: '16px', padding: '8px 0' }}>
+      <button 
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        style={{
+          padding: '6px 12px',
+          borderRadius: '6px',
+          border: '1px solid var(--border-color)',
+          backgroundColor: currentPage === 1 ? 'var(--bg-hover)' : 'var(--card-bg)',
+          color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-main)',
+          cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+          fontWeight: 'bold',
+          transition: 'all 0.2s'
+        }}
+      >
+        &lt;
+      </button>
+      <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)', margin: '0 8px' }}>
+        {currentPage} <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>of {totalPages}</span>
+      </span>
+      <button 
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        style={{
+          padding: '6px 12px',
+          borderRadius: '6px',
+          border: '1px solid var(--border-color)',
+          backgroundColor: currentPage === totalPages ? 'var(--bg-hover)' : 'var(--card-bg)',
+          color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-main)',
+          cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+          fontWeight: 'bold',
+          transition: 'all 0.2s'
+        }}
+      >
+        &gt;
+      </button>
+    </div>
+  );
 };
 
 const StaffDashboard = () => {
@@ -58,6 +103,9 @@ const StaffDashboard = () => {
   
   // Student Ledger Filters
   const [studentTextSearch, setStudentTextSearch] = useState('');
+  const [studentManagementTab, setStudentManagementTab] = useState('active');
+  const [studentSortOrder, setStudentSortOrder] = useState('');
+  const [studentCurrentPage, setStudentCurrentPage] = useState(1);
   const [studentCourseFilter, setStudentCourseFilter] = useState('All');
   const [studentAgeFilter, setStudentAgeFilter] = useState('All');
   
@@ -66,6 +114,24 @@ const StaffDashboard = () => {
   const [facultyMarksGlobalExamName, setFacultyMarksGlobalExamName] = useState('');
   const [facultyMarksFormData, setFacultyMarksFormData] = useState({});
   const [submittingMarks, setSubmittingMarks] = useState(false);
+  
+  // Enhanced Marks Portal specific
+  const [examSubjects, setExamSubjects] = useState([{ name: '', maxMarks: 100 }]);
+  const [examDate, setExamDate] = useState('');
+  const [isMarksDetailsModalVisible, setIsMarksDetailsModalVisible] = useState(false);
+  const [isViewMarksModalVisible, setIsViewMarksModalVisible] = useState(false);
+  const [selectedStudentForViewMarks, setSelectedStudentForViewMarks] = useState(null);
+  const [selectedStudentForMarks, setSelectedStudentForMarks] = useState(null);
+
+  // Course Materials State
+  const [materialTitle, setMaterialTitle] = useState('');
+  const [materialDesc, setMaterialDesc] = useState('');
+  const [materialFile, setMaterialFile] = useState(null);
+  const [materialCourseFilter, setMaterialCourseFilter] = useState('');
+  const [materialSelectedStudents, setMaterialSelectedStudents] = useState([]);
+  const [uploadingMaterial, setUploadingMaterial] = useState(false);
+  const [staffMaterials, setStaffMaterials] = useState([]);
+
   const getAgeBucket = (dob) => {
     if (!dob) return null;
     const birthDate = new Date(dob);
@@ -79,8 +145,9 @@ const StaffDashboard = () => {
 
   const filteredStudentList = (list) => {
     return list.filter(s => {
-      const matchSearch = (s.name || '').toLowerCase().includes(studentTextSearch.toLowerCase()) || 
-                          (s.enrollmentNo || '').toLowerCase().includes(studentTextSearch.toLowerCase());
+      const searchVal = (globalSearchQuery || studentTextSearch || '').toLowerCase();
+      const matchSearch = (s.name || '').toLowerCase().includes(searchVal) || 
+                          (s.enrollmentNo || '').toLowerCase().includes(searchVal);
       const matchCourse = studentCourseFilter === 'All' || s.course === studentCourseFilter;
       const bucket = getAgeBucket(s.dob);
       const matchAge = studentAgeFilter === 'All' || bucket === studentAgeFilter;
@@ -95,62 +162,38 @@ const StaffDashboard = () => {
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [attendanceHistoryList, setAttendanceHistoryList] = useState([]);
   
-  const [isFeeModalVisible, setIsFeeModalVisible] = useState(false);
-  const [selectedStudentForFee, setSelectedStudentForFee] = useState(null);
-  const [feeForm] = useNativeForm();
-  const cashAmount = feeForm.getFieldValue('cashAmount') || 0;
-  const upiAmount = feeForm.getFieldValue('upiAmount') || 0;
-  const cardAmount = feeForm.getFieldValue('cardAmount') || 0;
-  const totalFeePaid = Number(cashAmount) + Number(upiAmount) + Number(cardAmount);
+  const avatarInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  
+  const [selectedAttendanceRecord, setSelectedAttendanceRecord] = useState(null);
+  const [isAttendanceDetailsModalVisible, setIsAttendanceDetailsModalVisible] = useState(false);
 
-  const handleFeeSubmit = async (values) => {
-    if (totalFeePaid <= 0) {
-      message.error("Total amount must be greater than 0");
-      return;
-    }
-    setLoading(true);
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
     try {
-      await logTransaction('OFFLINE_FEE_COLLECTION', {
-        studentId: selectedStudentForFee.id,
-        staffId: user?.id,
-        amount: totalFeePaid,
-        actionContext: 'Offline Fee Collection'
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'my_lms_preset');
+
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'rdor42ow'}/image/upload`, {
+        method: 'POST',
+        body: formData,
       });
-      const receiptData = {
-        studentId: selectedStudentForFee.id,
-        course: selectedStudentForFee.course || 'N/A',
-        paymentSplit: {
-          cash: Number(values.cashAmount || 0),
-          upi: Number(values.upiAmount || 0),
-          card: Number(values.cardAmount || 0)
-        },
-        totalAmount: totalFeePaid,
-        billNumber: values.billNumber,
-        paymentDate: values.paymentDate ? values.paymentDate.toISOString() : new Date().toISOString(),
-        paymentTime: values.paymentTime ? values.paymentTime.format('HH:mm') : null,
-        remarks: values.remarks || ''
-      };
-      
-      await createReceipt(receiptData);
-      
-      const currentPaid = selectedStudentForFee.paidFee || 0;
-      const courseFee = selectedStudentForFee.courseFee || 28000;
-      const newPaid = currentPaid + totalFeePaid;
-      const newPending = courseFee - newPaid;
-      
-      await updateUserDoc(selectedStudentForFee.id, {
-        paidFee: newPaid,
-        pendingFee: newPending
-      });
-      
-      message.success("Fee collected successfully!");
-      setIsFeeModalVisible(false);
-      feeForm.resetFields();
-      fetchStudents();
+
+      const data = await response.json();
+      if (data.secure_url) {
+        await updateUserDoc(user.id, { photoUrl: data.secure_url });
+        const updatedUser = { ...user, photoUrl: data.secure_url };
+        localStorage.setItem('lms_user', JSON.stringify(updatedUser));
+      }
     } catch (error) {
-      message.error(error.message);
+      console.error('Error uploading avatar:', error);
+      message.error('Failed to upload avatar.');
     } finally {
-      setLoading(false);
+      setUploadingAvatar(false);
     }
   };
 
@@ -357,18 +400,20 @@ const StaffDashboard = () => {
     }
   }, [user]);
 
+  let unsubscribeStudents = null;
+
   const fetchStudents = async () => {
     if (!user?.organizationId) return;
     try {
-      const [students, assignments, orgDetails, courses] = await Promise.all([
-        getOrganizationStudents(user.organizationId),
+      setLoading(true);
+      const [assignments, orgDetails, courses] = await Promise.all([
         getStaffAssignments(user.organizationId, user.id),
         getOrganizationDetails(user.organizationId),
         getOrganizationCourses(user.organizationId)
       ]);
-      setStudentList(students);
       setScheduleList(assignments);
       setCourseList(courses || []);
+      
       if (orgDetails.logoUrl) {
         setLogoUrl(orgDetails.logoUrl);
         localStorage.setItem('org_logo', orgDetails.logoUrl);
@@ -376,8 +421,15 @@ const StaffDashboard = () => {
         setLogoUrl(null);
         localStorage.removeItem('org_logo');
       }
+
+      if (unsubscribeStudents) unsubscribeStudents();
+      unsubscribeStudents = subscribeToOrganizationStudents(user.organizationId, (studentsData) => {
+        setStudentList(studentsData);
+        setLoading(false);
+      });
     } catch (error) {
       console.error(error);
+      setLoading(false);
     }
   };
 
@@ -386,7 +438,17 @@ const StaffDashboard = () => {
     fetchAttendanceHistory();
     const savedTheme = localStorage.getItem('app-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
+    
+    return () => {
+      if (unsubscribeStudents) unsubscribeStudents();
+    };
   }, [user?.organizationId]);
+
+  useEffect(() => {
+    if (activeTab === '7' && user?.id) {
+      getCourseMaterialsForStaff(user.id).then(setStaffMaterials).catch(console.error);
+    }
+  }, [activeTab, user?.id]);
 
   const handleEditClick = (record) => {
     setEditingStudent(record);
@@ -591,64 +653,71 @@ const StaffDashboard = () => {
       <aside className="uxer-sidebar">
         <div className="uxer-sidebar-logo">
           <div className="logo-icon"></div>
-          <span style={{ fontSize: '24px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px' }}>Faculty</span>
         </div>
         
         <div className="uxer-sidebar-menu">
           <div className="uxer-sidebar-category">MAIN MENU</div>
-          <div onClick={() => setActiveTab('1')} className={`uxer-sidebar-item ${activeTab === '1' ? 'active' : ''}`}><CalendarIcon style={{ width: '20px', height: '20px' }} /> Dashboard</div>
           <div onClick={() => setActiveTab('3')} className={`uxer-sidebar-item ${activeTab === '3' ? 'active' : ''}`}><Users style={{ width: '20px', height: '20px' }} /> Manage Students</div>
           <div onClick={() => setActiveTab('4')} className={`uxer-sidebar-item ${activeTab === '4' ? 'active' : ''}`}><Calendar style={{ width: '20px', height: '20px' }} /> My Schedule</div>
           <div onClick={() => setActiveTab('5')} className={`uxer-sidebar-item ${activeTab === '5' ? 'active' : ''}`}><ClipboardList style={{ width: '20px', height: '20px' }} /> Attendance Management</div>
           <div onClick={() => setActiveTab('6')} className={`uxer-sidebar-item ${activeTab === '6' ? 'active' : ''}`}><Award style={{ width: '20px', height: '20px' }} /> Marks Portal</div>
+          <div onClick={() => setActiveTab('7')} className={`uxer-sidebar-item ${activeTab === '7' ? 'active' : ''}`}><BookOpen style={{ width: '20px', height: '20px' }} /> Course Materials</div>
         </div>
 
-        <div style={{ padding: '0 8px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#666666', fontSize: '14px', fontWeight: '500' }}>
-            <Moon style={{ width: '20px', height: '20px' }} /> Dark mode
+        {/* Sidebar Bottom Profile Widget */}
+        <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', margin: 'auto -12px -20px -12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+            <input type="file" accept="image/*" style={{ display: 'none' }} ref={avatarInputRef} onChange={handleAvatarUpload} />
+            {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
+              <img onClick={() => avatarInputRef.current?.click()} src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0, opacity: uploadingAvatar ? 0.5 : 1, backgroundColor: 'var(--bg-hover)', cursor: 'pointer' }} onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+            ) : (
+              <div onClick={() => avatarInputRef.current?.click()} style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1e293b', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0, opacity: uploadingAvatar ? 0.5 : 1, cursor: 'pointer' }}>
+                {uploadingAvatar ? <Clock style={{ width: '16px', height: '16px' }} /> : (user?.name ? user.name.charAt(0).toUpperCase() : 'U')}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.name || 'Staff'}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.organizationName || 'Organization'}</span>
+            </div>
           </div>
-          <div style={{ width: '36px', height: '20px', backgroundColor: '#111111', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
-            <div style={{ width: '16px', height: '16px', backgroundColor: '#FFFFFF', borderRadius: '50%', position: 'absolute', top: '2px', right: '2px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}></div>
-          </div>
+          <button onClick={logoutUser} style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s', color: 'var(--text-secondary)' }} title="Logout" onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
+            <LogOut style={{ width: '16px', height: '16px' }} />
+          </button>
         </div>
+
       </aside>
 
       {/* Main Content Area */}
       <main className="uxer-main">
         <header className="uxer-header">
           <div className="uxer-header-left">
-            <div className="org-text" style={{ textTransform: 'uppercase' }}>{user?.organizationName || 'Organization'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {logoUrl ? (
+                <img src={logoUrl} alt="Organization Logo" style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '4px' }} />
+              ) : (
+                <div style={{ width: '40px', height: '40px', borderRadius: '4px', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                  {(user?.organizationName || 'O').charAt(0)}
+                </div>
+              )}
+              <div className="org-text" style={{ textTransform: 'uppercase', margin: 0 }}>{user?.organizationName || 'Organization'}</div>
+            </div>
             <h1>Faculty Portal</h1>
           </div>
           <div className="uxer-header-right">
             <div className="uxer-search">
               <Search style={{ width: '16px', height: '16px', color: '#999', flexShrink: 0 }} />
-              <input type="text" placeholder="Search" />
+              <input 
+                type="text" 
+                placeholder="Search" 
+                value={globalSearchQuery}
+                onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              />
               <div className="uxer-shortcut">&#8984; F</div>
             </div>
             
             <button style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
               <Bell style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
               <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', backgroundColor: 'var(--text-main)', borderRadius: '50%', border: '2px solid var(--card-bg)' }}></span>
-            </button>
-            <div style={{ height: '32px', width: '1px', backgroundColor: 'var(--border-color)', margin: '0 8px' }}></div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', flexShrink: 0 }}>
-              {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
-                <img src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0 }} />
-              ) : (
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0 }}>
-                  {user?.name?.charAt(0).toUpperCase() || 'F'}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Organization: {user?.organizationName}</span>
-              </div>
-            </div>
-            
-            <button onClick={logoutUser} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }} title="Logout">
-              <LogOut style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
             </button>
           </div>
         </header>
@@ -697,6 +766,178 @@ const StaffDashboard = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
               <button style={{ cursor: 'pointer', padding: '8px 16px', backgroundColor: 'var(--slate-800, #1e293b)', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold' }} onClick={() => setIsProfileModalVisible(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMarksDetailsModalVisible && selectedStudentForMarks && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '800px', maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '8px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Enter Marks for {selectedStudentForMarks.name}</h2>
+            
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Exam Name</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Midterm, Final" 
+                  className="native-form-input" 
+                  value={facultyMarksGlobalExamName}
+                  onChange={(e) => setFacultyMarksGlobalExamName(e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: '150px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Exam Date</label>
+                <input 
+                  type="date" 
+                  className="native-form-input" 
+                  value={examDate}
+                  onChange={(e) => setExamDate(e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-hover)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 'bold' }}>Subjects</h4>
+              {examSubjects.map((subject, index) => (
+                <div key={index} style={{ display: 'flex', gap: '12px', marginBottom: '16px', alignItems: 'flex-end' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <label style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>Subject Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="Subject Name" 
+                      className="native-form-input"
+                      value={subject.name}
+                      onChange={(e) => {
+                        const newSubjects = [...examSubjects];
+                        newSubjects[index].name = e.target.value;
+                        setExamSubjects(newSubjects);
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>Total Marks</label>
+                    <input 
+                      type="number" 
+                      placeholder="Max" 
+                      className="native-form-input"
+                      value={subject.maxMarks}
+                      onChange={(e) => {
+                        const newSubjects = [...examSubjects];
+                        newSubjects[index].maxMarks = Number(e.target.value);
+                        if (Number(newSubjects[index].obtained) > newSubjects[index].maxMarks) {
+                          newSubjects[index].obtained = newSubjects[index].maxMarks;
+                        }
+                        setExamSubjects(newSubjects);
+                      }}
+                      style={{ width: '100px' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>Marks Obtained</label>
+                    <input 
+                      type="number" 
+                      placeholder="Obtained" 
+                      className="native-form-input"
+                      max={subject.maxMarks}
+                      value={subject.obtained}
+                      onChange={(e) => {
+                        let val = Number(e.target.value);
+                        if (val > subject.maxMarks) val = subject.maxMarks;
+                        const newSubjects = [...examSubjects];
+                        newSubjects[index].obtained = val;
+                        setExamSubjects(newSubjects);
+                      }}
+                      style={{ width: '120px' }}
+                    />
+                  </div>
+                  {index > 0 && (
+                    <button onClick={() => setExamSubjects(examSubjects.filter((_, i) => i !== index))} style={{ background: 'none', border: 'none', color: 'var(--red-500)', cursor: 'pointer', paddingBottom: '10px' }}><Trash2 size={20} /></button>
+                  )}
+                </div>
+              ))}
+              <button 
+                onClick={() => setExamSubjects([...examSubjects, { name: '', maxMarks: 100, obtained: '' }])}
+                style={{ padding: '6px 12px', background: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+              >+ Add Subject</button>
+            </div>
+
+            {(() => {
+              const totalMax = examSubjects.reduce((acc, sub) => acc + (Number(sub.maxMarks) || 0), 0);
+              const totalObtained = examSubjects.reduce((acc, sub) => acc + (Number(sub.obtained) || 0), 0);
+              const percentage = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(1) : 0;
+              return (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', backgroundColor: 'var(--indigo-50, #eef2ff)', borderRadius: '6px', fontWeight: 'bold' }}>
+                  <span>Total: {totalObtained} / {totalMax}</span>
+                  <span>Percentage: {percentage}%</span>
+                </div>
+              );
+            })()}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
+              <button style={{ cursor: 'pointer', padding: '8px 16px', backgroundColor: 'var(--slate-800, #1e293b)', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold' }} onClick={() => setIsMarksDetailsModalVisible(false)}>Cancel</button>
+              <button 
+                disabled={submittingMarks}
+                onClick={async () => {
+                  if (!facultyMarksGlobalExamName.trim() || !examDate) {
+                    message.warning('Please enter an Exam Name and Date.');
+                    return;
+                  }
+                  setSubmittingMarks(true);
+                  try {
+                    const totalMaxMarks = examSubjects.reduce((acc, sub) => acc + (Number(sub.maxMarks) || 0), 0);
+                    const totalObtained = examSubjects.reduce((acc, sub) => acc + (Number(sub.obtained) || 0), 0);
+                    const percentage = totalMaxMarks > 0 ? ((totalObtained / totalMaxMarks) * 100).toFixed(1) : 0;
+                    
+                    let autoGrade = 'F';
+                    if (percentage >= 90) autoGrade = 'A+';
+                    else if (percentage >= 80) autoGrade = 'A';
+                    else if (percentage >= 70) autoGrade = 'B';
+                    else if (percentage >= 60) autoGrade = 'C';
+                    else if (percentage >= 50) autoGrade = 'D';
+
+                    const examRecord = {
+                      examName: facultyMarksGlobalExamName.trim(),
+                      examDate: examDate,
+                      subjects: examSubjects.map((sub, i) => ({
+                        name: sub.name || `Subject ${i+1}`,
+                        maxMarks: Number(sub.maxMarks) || 100,
+                        obtained: Number(sub.obtained) || 0
+                      })),
+                      totalMaxMarks: totalMaxMarks,
+                      totalObtainedMarks: totalObtained,
+                      percentage: Number(percentage),
+                      grade: autoGrade,
+                      enteredBy: user?.name || 'Staff',
+                      staffRole: user?.role || 'staff',
+                      subjectHandled: user?.course || 'General',
+                      uploadedDate: new Date().toISOString()
+                    };
+
+                    await addDynamicStudentMarks(selectedStudentForMarks.id, examRecord);
+                    setStudentList(prevList => prevList.map(s => {
+                      if (s.id === selectedStudentForMarks.id) {
+                        return { ...s, examHistory: [...(s.examHistory || []), examRecord] };
+                      }
+                      return s;
+                    }));
+                    message.success('Marks recorded successfully!');
+                    setIsMarksDetailsModalVisible(false);
+                  } catch(err) {
+                    message.error(err.message);
+                  } finally {
+                    setSubmittingMarks(false);
+                  }
+                }}
+                style={{ cursor: 'pointer', padding: '8px 16px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                {submittingMarks ? <Clock size={18} /> : <CheckCircle size={18} />} 
+                {submittingMarks ? 'Saving...' : 'Save Marks'}
+              </button>
             </div>
           </div>
         </div>
@@ -764,11 +1005,31 @@ const StaffDashboard = () => {
                 </div>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Phone Number</label>
-                  <input type="text" placeholder="Student Phone" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({phoneNumber: e.target.value})} />
+                  <input type="text" placeholder="Student Phone" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, '');
+                    if (val.length > 10) val = val.slice(0, 10);
+                    e.target.value = val;
+                    studentForm.setFieldsValue({phoneNumber: val});
+                    if (!/^[6-9]\d{9}$/.test(val)) {
+                      e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                    } else {
+                      e.target.setCustomValidity('');
+                    }
+                  }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
-                  <input type="text" placeholder="Parent Phone" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({parentPhone: e.target.value})} />
+                  <input type="text" placeholder="Parent Phone" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, '');
+                    if (val.length > 10) val = val.slice(0, 10);
+                    e.target.value = val;
+                    studentForm.setFieldsValue({parentPhone: val});
+                    if (val && !/^[6-9]\d{9}$/.test(val)) {
+                      e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                    } else {
+                      e.target.setCustomValidity('');
+                    }
+                  }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Status</label>
@@ -779,7 +1040,14 @@ const StaffDashboard = () => {
                 </div>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Email</label>
-                  <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({email: e.target.value})} />
+                  <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                    studentForm.setFieldsValue({email: e.target.value});
+                    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                      e.target.setCustomValidity('Please enter a valid Email address');
+                    } else {
+                      e.target.setCustomValidity('');
+                    }
+                  }} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input type="checkbox" id="sendSMS" defaultChecked onChange={(e) => studentForm.setFieldsValue({sendSMS: e.target.checked})} />
@@ -820,149 +1088,203 @@ const StaffDashboard = () => {
                   {activeTab === '3' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   
-                  <div className="uxer-stats-grid">
-                    <div className="uxer-stat-card">
-                      <div className="uxer-stat-title">TOTAL STUDENTS</div>
-                      <div className="uxer-stat-content">
-                        <div className="uxer-stat-value">{studentList.length}</div>
-                        <div className="uxer-stat-badge">
-                          <span className="uxer-stat-badge-text">vs last month</span>
-                          <div className="uxer-stat-badge-pill green">+{studentList.length}</div>
+                  <div style={{ width: '100%', marginBottom: '24px' }}>
+                    {(() => {
+                      const filteredListForStats = filteredStudentList(studentList);
+                      return (
+                        <div className="uxer-stats-grid">
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">TOTAL STUDENTS</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.length}</div>
+                              <div className="uxer-stat-badge">
+                                <div className="uxer-stat-badge-pill green"><TrendingUp className="w-3 h-3" style={{marginRight: '2px'}}/>+12%</div>
+                                <span className="uxer-stat-badge-text">from last week</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">ACTIVE STUDENTS</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
+                              <div className="uxer-stat-badge">
+                                <div className="uxer-stat-badge-pill green"><TrendingUp className="w-3 h-3" style={{marginRight: '2px'}}/>+5%</div>
+                                <span className="uxer-stat-badge-text">from last week</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">DROP-OUTS</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.filter(s => s.currentStatus === 'Drop-out').length}</div>
+                              <div className="uxer-stat-badge">
+                                <div className="uxer-stat-badge-pill red"><TrendingDown className="w-3 h-3" style={{marginRight: '2px'}}/>-2%</div>
+                                <span className="uxer-stat-badge-text">from last week</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="uxer-stat-card">
+                            <div className="uxer-stat-title">INACTIVE</div>
+                            <div className="uxer-stat-content">
+                              <div className="uxer-stat-value">{filteredListForStats.filter(s => s.currentStatus === 'Inactive').length}</div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                    <div className="uxer-stat-card">
-                      <div className="uxer-stat-title">ACTIVE STUDENTS</div>
-                      <div className="uxer-stat-content">
-                        <div className="uxer-stat-value">{studentList.filter(s => (s.currentStatus || 'Active') === 'Active').length}</div>
-                        <div className="uxer-stat-badge">
-                          <span className="uxer-stat-badge-text">vs last month</span>
-                          <div className="uxer-stat-badge-pill green">+0%</div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="uxer-stat-card">
-                      <div className="uxer-stat-title">DROP-OUTS</div>
-                      <div className="uxer-stat-content">
-                        <div className="uxer-stat-value">{studentList.filter(s => s.currentStatus === 'Drop-out').length}</div>
-                        <div className="uxer-stat-badge">
-                          <span className="uxer-stat-badge-text">needs attention</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="uxer-stat-card">
-                      <div className="uxer-stat-title">INACTIVE</div>
-                      <div className="uxer-stat-content">
-                        <div className="uxer-stat-value">{studentList.filter(s => s.currentStatus === 'Inactive').length}</div>
-                        <div className="uxer-stat-badge">
-                          <span className="uxer-stat-badge-text">on hold</span>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
 
-                  <div className="uxer-toolbar">
-                    <div className="uxer-toolbar-left">
-                      <select 
+                  {/* Toolbar: tabs + actions */}
+                  <div className="uxer-toolbar" style={{ marginBottom: '16px' }}>
+                    <div className="uxer-tabs">
+                      <div
+                        className={`uxer-tab ${(studentManagementTab === 'active' || !studentManagementTab) ? 'active' : ''}`}
+                        onClick={() => setStudentManagementTab('active')}
+                      >All</div>
+                      <div
+                        className={`uxer-tab ${studentManagementTab === 'only-active' ? 'active' : ''}`}
+                        onClick={() => setStudentManagementTab('only-active')}
+                      >Active</div>
+                      <div
+                        className={`uxer-tab ${studentManagementTab === 'inactive' ? 'active' : ''}`}
+                        onClick={() => setStudentManagementTab('inactive')}
+                      >Inactive</div>
+                      <div
+                        className={`uxer-tab ${studentManagementTab === 'dropout' ? 'active' : ''}`}
+                        onClick={() => setStudentManagementTab('dropout')}
+                      >Drop-Outs</div>
+                    </div>
+                    <div className="uxer-actions">
+                      <select
+                        className="uxer-action-btn"
                         value={studentCourseFilter}
                         onChange={(e) => setStudentCourseFilter(e.target.value)}
-                        className="uxer-dropdown-btn"
-                        style={{ appearance: 'none', paddingRight: '28px' }}
+                        style={{ background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none' }}
                       >
                         <option value="All">All Courses</option>
-                        {courseList.map(c => <option key={c.id} value={c.title || c.name}>{c.title || c.name}</option>)}
+                        {courseList.map(c => <option key={c.id} value={c.name || c.title}>{c.name || c.title}</option>)}
                       </select>
-                      <select 
-                        value={studentAgeFilter}
-                        onChange={(e) => setStudentAgeFilter(e.target.value)}
-                        className="uxer-dropdown-btn"
-                        style={{ appearance: 'none', paddingRight: '28px' }}
+                      <button 
+                        className="uxer-action-btn"
+                        onClick={() => setStudentSortOrder(prev => prev === 'A-Z' ? '' : 'A-Z')}
                       >
-                        <option value="All">All Ages</option>
-                        <option value="Under 18">Under 18</option>
-                        <option value="18-24">18 - 24</option>
-                        <option value="25-30">25 - 30</option>
-                        <option value="30+">30+</option>
-                      </select>
-                      <button className="uxer-dropdown-btn"><Filter className="w-4 h-4" style={{ color: '#999' }} /> Filter</button>
-                    </div>
-                    
-                    <div className="uxer-toolbar-right">
-                      <div className="uxer-search">
-                        <Search className="w-4 h-4" style={{ color: '#999' }} />
-                        <input 
-                          type="text" 
-                          placeholder="Search students..." 
-                          value={studentTextSearch}
-                          onChange={(e) => setStudentTextSearch(e.target.value)}
-                        />
-                        <div className="uxer-shortcut">&#8984; F</div>
-                      </div>
-                      <button type="button" onClick={() => { setGlobalSearchAction('edit'); setGlobalSearchModalVisible(true); }} className="uxer-dropdown-btn" style={{ color: 'var(--uxer-primary)', borderColor: 'var(--uxer-primary)' }}>Edit Student</button>
-                      <button className="uxer-btn-green" onClick={() => setIsAddStudentModalVisible(true)}>+ New Student</button>
+                        <TrendingUp className="w-4 h-4" style={{ marginRight: '6px' }} /> 
+                        {studentSortOrder === 'A-Z' ? 'Sort: A-Z' : 'Sort'}
+                      </button>
+                      <button className="uxer-btn-green" onClick={() => setAddStudentTab('choice')}>+ New Student</button>
                     </div>
                   </div>
 
-                  <div className="uxer-table-card">
-                    <table className="uxer-table">
-                      <thead>
-                        <tr>
-                          <th><input type="checkbox" className="saas-v3-table-checkbox saas-v3-form-input" /></th>
-                          <th>Student</th>
-                          <th>Course</th>
-                          <th>Fees Status</th>
-                          <th>Phone</th>
-                          <th>Status</th>
-                          <th>+</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredStudentList(studentList).slice(0, 50).map(student => {
-                          const courseFee = student.courseFee || 28000;
-                          const paid = student.paidFee || 0;
-                          const feeStatus = (courseFee - paid) <= 0 ? 'Paid' : 'Pending';
-                          return (
-                            <tr key={student.id}>
-                              <td><input type="checkbox" className="saas-v3-table-checkbox saas-v3-form-input" /></td>
-                              <td>
-                                <div className="saas-v3-user-cell">
-                                  {student.documents?.profilePhotoUrl || student.photoUrl ? (
-                                    <img src={student.documents?.profilePhotoUrl || student.photoUrl} alt="Avatar" className="saas-v3-user-avatar" />
-                                  ) : (
-                                    <div className="saas-v3-user-avatar">{student.name?.charAt(0).toUpperCase()}</div>
-                                  )}
-                                  <div style={{display:'flex', flexDirection:'column'}}>
-                                    <span style={{fontWeight:'600'}}>{student.name}</span>
-                                    <span style={{fontSize:'12px', color:'#6b7280'}}>{student.enrollmentNo || student.id.substring(0,6).toUpperCase()}</span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>{student.course || 'N/A'}</td>
-                              <td>
-                                <span className={feeStatus === 'Paid' ? 'saas-v3-badge-green' : 'saas-v3-badge-red'}>
-                                  {feeStatus}
-                                </span>
-                              </td>
-                              <td>{student.phoneNumber || 'N/A'}</td>
-                              <td>
-                                <span className={
-                                  student.currentStatus === 'Active' || !student.currentStatus ? 'saas-v3-badge-green' :
-                                  student.currentStatus === 'Drop-out' ? 'saas-v3-badge-red' :
-                                  student.currentStatus === 'Completed' ? 'saas-v3-badge-purple' :
-                                  'saas-v3-badge-yellow'
-                                }>
-                                  {student.currentStatus || 'Active'}
-                                </span>
-                              </td>
-                              <td>
-                                <button onClick={() => { setSelectedStudentForProfile(student); setIsProfileModalVisible(true); }} style={{background: 'transparent', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '16px', fontWeight: 'bold'}}>...</button>
-                              </td>
+                  {/* Student Table Card */}
+                  {(() => {
+                    let list = studentList;
+                    if (studentManagementTab === 'only-active') list = list.filter(s => (s.currentStatus || 'Active') === 'Active');
+                    else if (studentManagementTab === 'inactive') list = list.filter(s => s.currentStatus === 'Inactive');
+                    else if (studentManagementTab === 'dropout') list = list.filter(s => s.currentStatus === 'Drop-out');
+                    const filtered = filteredStudentList(list);
+                    if (studentSortOrder === 'A-Z') {
+                      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                    }
+                    const totalRecords = filtered.length;
+                    const totalPages = Math.ceil(totalRecords / 20);
+                    const startIndex = (studentCurrentPage - 1) * 20;
+                    const currentRecords = filtered.slice(startIndex, startIndex + 20);
+                    
+                    return (
+                      <div className="uxer-table-card">
+                        <table className="uxer-table">
+                          <thead>
+                            <tr>
+                              <th>Student</th>
+                              <th>Course</th>
+                              <th>Batch</th>
+                              <th>Phone</th>
+                              <th>Status</th>
+                              <th>Actions</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody>
+                            {currentRecords.length === 0 ? (
+                              <tr><td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>No students found.</td></tr>
+                            ) : (
+                              currentRecords.map((s, i) => {
+                                const initials = (s.name || 'S').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+                                const status = s.currentStatus || 'Active';
+                                const statusClass = status === 'Active' ? 'active' : status === 'Inactive' ? 'inactive' : 'dropout';
+                                const statusLabel = status === 'Drop-out' ? 'Drop-Out' : status;
+                                return (
+                                  <tr key={s.id || i}>
+                                    <td>
+                                      <div className="uxer-student-cell">
+                                        <div className="uxer-avatar">{initials}</div>
+                                        <span className="uxer-student-name">{s.name || 'Unknown'}</span>
+                                      </div>
+                                    </td>
+                                    <td>{s.course || '-'}</td>
+                                    <td>{s.batch || '-'}</td>
+                                    <td>{s.phoneNumber || s.parentPhone || '-'}</td>
+                                    <td><span className={`uxer-status-pill ${statusClass}`}>{statusLabel}</span></td>
+                                    <td>
+                                      <div style={{ display: 'flex', gap: '16px' }}>
+                                        <button
+                                          onClick={() => { setSelectedStudentForProfile(s); setIsProfileModalVisible(true); }}
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6' }}
+                                          title="View History"
+                                        ><Eye size={18} /></button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                        <CustomPagination 
+                          currentPage={studentCurrentPage} 
+                          totalItems={totalRecords} 
+                          itemsPerPage={20} 
+                          onPageChange={setStudentCurrentPage} 
+                        />
+                      </div>
+                    );
+                  })()}
+
+                  {/* Choice Modal for New Student */}
+                  {addStudentTab === 'choice' && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="custom-modal-viewport-card" style={{ backgroundColor: '#fff', padding: '32px', borderRadius: '12px', width: '400px', display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
+                        <button onClick={() => setAddStudentTab('single')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', position: 'absolute', top: '16px', right: '16px', color: '#64748b' }}><X size={20}/></button>
+                        <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', textAlign: 'center' }}>Add Student</h2>
+                        <button onClick={() => { setAddStudentTab('single'); setIsAddStudentModalVisible(true); }} className="uxer-btn-green" style={{ width: '100%', padding: '12px', fontSize: '16px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <UserCheck size={20} /> Add Single Student
+                        </button>
+                        <button onClick={() => { setAddStudentTab('bulk'); }} className="uxer-dropdown-btn" style={{ width: '100%', padding: '12px', fontSize: '16px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)', borderColor: 'var(--border-color)' }}>
+                           <UploadCloud size={20} /> Bulk Import (CSV/Excel)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bulk Import UI Modal */}
+                  {addStudentTab === 'bulk' && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="custom-modal-viewport-card" style={{ backgroundColor: '#fff', padding: '32px', borderRadius: '12px', width: '600px', display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
+                         <button onClick={() => setAddStudentTab('single')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', position: 'absolute', top: '16px', right: '16px', color: '#64748b' }}><X size={20}/></button>
+                         <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', textAlign: 'center' }}>Bulk Import Students</h2>
+                         <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 text-indigo-800 text-sm text-center shadow-sm">
+                            <strong>Instructions:</strong> Please upload a CSV file with columns <code>Name</code>, <code>Email</code>, <code>Gender</code>, <code>DOB</code>, <code>DateOfJoining</code>, <code>EnrollmentNo</code>, <code>Course</code>, <code>CourseFee</code>, <code>StudentPhone</code>, <code>ParentPhone</code>, <code>Status</code>.
+                         </div>
+                         <div className="w-full flex flex-col items-center gap-4">
+                           <div className="w-full p-10 bg-white border-2 border-dashed border-slate-300 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all shadow-sm text-center" style={{ cursor: 'pointer' }}>
+                             <UploadCloud className="w-14 h-14 text-indigo-500 mx-auto mb-4" />
+                             <p className="text-xl font-semibold text-slate-700">Click or drag CSV file to this area to upload</p>
+                             <p className="text-slate-500 mt-3 text-base">Strictly single CSV file upload.</p>
+                           </div>
+                         </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               )}
 
@@ -978,7 +1300,13 @@ const StaffDashboard = () => {
                            <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>No batches assigned to your schedule.</p>
                         </div>
                      )}
-                     {scheduleList.map(batch => (
+                     {scheduleList.filter(batch => {
+                       const searchVal = (globalSearchQuery || '').toLowerCase();
+                       if (!searchVal) return true;
+                       return (batch.courseName || '').toLowerCase().includes(searchVal) ||
+                              (batch.classTiming || '').toLowerCase().includes(searchVal) ||
+                              (batch.startDate || '').toLowerCase().includes(searchVal);
+                     }).map(batch => (
                         <div key={batch.id} 
                              onClick={() => setSelectedBatch(batch)}
                              style={{ backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}
@@ -1151,82 +1479,71 @@ const StaffDashboard = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {attendanceHistoryList.map(r => {
+                            {attendanceHistoryList.filter(r => {
+                               const searchVal = (globalSearchQuery || '').toLowerCase();
+                               if (!searchVal) return true;
+                               return (r.batchName || '').toLowerCase().includes(searchVal) ||
+                                      (r.date || '').toLowerCase().includes(searchVal);
+                            }).map(r => {
                               const today = new Date().toISOString().split('T')[0];
                               const isToday = r.date === today;
                               const editable = isToday && isAttendanceEditable(r.slot);
-                              const isExpanded = expandedRowId === r.id;
                               return (
-                                <React.Fragment key={r.id}>
-                                  <tr onClick={() => setExpandedRowId(isExpanded ? null : r.id)} style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', backgroundColor: isExpanded ? 'var(--bg-hover)' : 'transparent' }}>
-                                    <td>{r.date}</td>
-                                    <td>{r.batchName}</td>
-                                    <td>{r.slot}</td>
-                                    <td>{r.records?.length || 0}</td>
-                                    <td>{r.totalPresentees !== undefined ? r.totalPresentees : (r.records?.filter(rec => rec.status === 'P').length || 0)}</td>
-                                    <td>{r.totalAbsentees !== undefined ? r.totalAbsentees : (r.records?.filter(rec => rec.status === 'A').length || 0)}</td>
-                                    <td>
-                                      {editable ? (
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            const batch = scheduleList.find(b => b.courseName === r.batchName);
-                                            if (batch) {
-                                              setSelectedBatch(batch);
-                                              const newState = {};
-                                              if (r.records) {
-                                                r.records.forEach(rec => {
-                                                  const student = studentList.find(s => s.name === rec.studentName && s.course === batch.courseName);
-                                                  if (student) newState[student.id] = rec.status;
-                                                });
-                                              }
-                                              setAttendanceState(newState);
-                                              setIsAttendanceModalVisible(true);
-                                            } else {
-                                              alert("Batch details not found in schedule.");
+                                <tr 
+                                  key={r.id} 
+                                  onClick={() => {
+                                    setSelectedAttendanceRecord(r);
+                                    setIsAttendanceDetailsModalVisible(true);
+                                  }} 
+                                  style={{ cursor: 'pointer', backgroundColor: 'transparent', transition: 'background-color 0.2s' }}
+                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  <td>
+                                    <div style={{ fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <Calendar style={{ width: '16px', height: '16px', color: 'var(--slate-400, #94a3b8)' }} />
+                                      {r.date}
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <span style={{ padding: '4px 8px', backgroundColor: 'var(--indigo-50, #eef2ff)', color: 'var(--indigo-600, #4f46e5)', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
+                                      {r.batchName}
+                                    </span>
+                                  </td>
+                                  <td>{r.slot}</td>
+                                  <td>{r.records?.length || 0}</td>
+                                  <td>{r.totalPresentees !== undefined ? r.totalPresentees : (r.records?.filter(rec => rec.status === 'P').length || 0)}</td>
+                                  <td>{r.totalAbsentees !== undefined ? r.totalAbsentees : (r.records?.filter(rec => rec.status === 'A').length || 0)}</td>
+                                  <td>
+                                    {editable ? (
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const batch = scheduleList.find(b => b.courseName === r.batchName);
+                                          if (batch) {
+                                            setSelectedBatch(batch);
+                                            const newState = {};
+                                            if (r.records) {
+                                              r.records.forEach(rec => {
+                                                const student = studentList.find(s => s.name === rec.studentName && s.course === batch.courseName);
+                                                if (student) newState[student.id] = rec.status;
+                                              });
                                             }
-                                          }}
-                                          style={{ padding: '6px 12px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                        >
-                                          <Pencil style={{ width: '12px', height: '12px' }} /> Edit
-                                        </button>
-                                      ) : (
-                                        <span style={{ padding: '4px 8px', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Closed</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                  {isExpanded && (
-                                    <tr>
-                                      <td>
-                                        <div style={{ backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                                          <h4 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Student Attendance List</h4>
-                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-                                            {r.records && Array.isArray(r.records) ? r.records.map((rec, i) => (
-                                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                                                <span style={{ fontWeight: '500' }}>{rec.studentName}</span>
-                                                {rec.status === 'P' ? (
-                                                  <span style={{ color: 'var(--green-600, #16a34a)', backgroundColor: 'var(--green-50, #f0fdf4)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle style={{ width: '14px', height: '14px' }} /> Present</span>
-                                                ) : (
-                                                  <span style={{ color: 'var(--red-600, #dc2626)', backgroundColor: 'var(--red-50, #fef2f2)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><XCircle style={{ width: '14px', height: '14px' }} /> Absent</span>
-                                                )}
-                                              </div>
-                                            )) : <div style={{ color: '#64748b', fontStyle: 'italic' }}>No records found for this batch.</div>}
-                                          </div>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontWeight: 'bold' }}>
-                                              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--green-500, #22c55e)' }}></div> Total Present: {r.totalPresentees || 0}</span>
-                                              <span style={{ color: 'var(--border-color)' }}>|</span>
-                                              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--red-500, #ef4444)' }}></div> Total Absent: {r.totalAbsentees || 0}</span>
-                                            </div>
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); downloadAttendanceCSV(r); }} style={{ padding: '8px 16px', backgroundColor: 'var(--indigo-600, #4f46e5)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                              <Download style={{ width: '16px', height: '16px' }} /> Download Report
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
+                                            setAttendanceState(newState);
+                                            setIsAttendanceModalVisible(true);
+                                          } else {
+                                            alert("Batch details not found in schedule.");
+                                          }
+                                        }}
+                                        style={{ padding: '6px 12px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                      >
+                                        <Pencil style={{ width: '12px', height: '12px' }} /> Edit
+                                      </button>
+                                    ) : (
+                                      <span style={{ padding: '4px 8px', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Closed</span>
+                                    )}
+                                  </td>
+                                </tr>
                               );
                             })}
                             {attendanceHistoryList.length === 0 && (
@@ -1235,6 +1552,44 @@ const StaffDashboard = () => {
                           </tbody>
                         </table>
                       </div>
+
+                      {/* Attendance Details Modal */}
+                      {isAttendanceDetailsModalVisible && selectedAttendanceRecord && (
+                        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', width: '600px', maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto', position: 'relative', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}>
+                            <button 
+                              onClick={() => setIsAttendanceDetailsModalVisible(false)} 
+                              style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--slate-400, #94a3b8)' }}
+                            >
+                              <X style={{ width: '24px', height: '24px' }} />
+                            </button>
+                            <h4 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Student Attendance List</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+                              {selectedAttendanceRecord.records && Array.isArray(selectedAttendanceRecord.records) ? selectedAttendanceRecord.records.map((rec, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                                  <span style={{ fontWeight: '500' }}>{rec.studentName}</span>
+                                  {rec.status === 'P' ? (
+                                    <span style={{ color: 'var(--green-600, #16a34a)', backgroundColor: 'var(--green-50, #f0fdf4)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle style={{ width: '14px', height: '14px' }} /> Present</span>
+                                  ) : (
+                                    <span style={{ color: 'var(--red-600, #dc2626)', backgroundColor: 'var(--red-50, #fef2f2)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><XCircle style={{ width: '14px', height: '14px' }} /> Absent</span>
+                                  )}
+                                </div>
+                              )) : <div style={{ color: '#64748b', fontStyle: 'italic' }}>No records found for this batch.</div>}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontWeight: 'bold' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--green-500, #22c55e)' }}></div> Total Present: {selectedAttendanceRecord.totalPresentees || 0}</span>
+                                <span style={{ color: 'var(--border-color)' }}>|</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--red-500, #ef4444)' }}></div> Total Absent: {selectedAttendanceRecord.totalAbsentees || 0}</span>
+                              </div>
+                              <button type="button" onClick={() => downloadAttendanceCSV(selectedAttendanceRecord)} style={{ padding: '8px 16px', backgroundColor: 'var(--indigo-600, #4f46e5)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Download style={{ width: '16px', height: '16px' }} /> Download Report
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   </div>
                 )}
@@ -1244,133 +1599,242 @@ const StaffDashboard = () => {
             {activeTab === '6' && (
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden w-full mt-6">
                 <h3 className="text-lg font-semibold mb-4 text-slate-800" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Award className="w-5 h-5 text-blue-600" /> Faculty Marks Portal
+                  <Award className="w-5 h-5 text-blue-600" /> Student Marks Portal
                 </h3>
                 
-                <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: '200px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-main)' }}>Select Course</label>
-                    <select 
-                      className="native-form-select saas-v3-form-select" 
-                      value={facultyMarksCourseFilter} 
-                      onChange={(e) => {
-                        setFacultyMarksCourseFilter(e.target.value);
-                        setFacultyMarksFormData({}); // Reset forms when course changes
-                      }}
-                      style={{ width: '100%' }}
-                    >
-                      <option value="">-- Select a Course --</option>
-                      {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ flex: 1, minWidth: '200px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-main)' }}>Select Exam</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Midterm, Final" 
-                      className="native-form-input saas-v3-form-input" 
-                      value={facultyMarksGlobalExamName}
-                      onChange={(e) => setFacultyMarksGlobalExamName(e.target.value)}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                </div>
-
-                {facultyMarksCourseFilter && (() => {
-                  const studentsInCourse = studentList.filter(s => s.course === facultyMarksCourseFilter);
+                {(() => {
+                  const searchVal = (globalSearchQuery || '').toLowerCase();
+                  const assignedStudents = studentList.filter(s => 
+                    (!searchVal || (s.name || '').toLowerCase().includes(searchVal) || (s.enrollmentNo || '').toLowerCase().includes(searchVal))
+                  );
                   
-                  if (studentsInCourse.length === 0) {
-                    return <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No students found in this course.</div>;
+                  if (assignedStudents.length === 0) {
+                    return <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No students found.</div>;
                   }
 
                   return (
-                    <div>
-                      <div className="native-table-wrapper" style={{ overflowX: 'auto', marginBottom: '24px' }}>
-                        <table className="saas-table">
-                          <thead>
-                            <tr>
-                              <th>Student Name</th>
-                              <th>Enrollment No</th>
-                              <th>Marks Scored</th>
-                              <th>Grade</th>
+                    <div className="native-table-wrapper" style={{ overflowX: 'auto', marginBottom: '24px' }}>
+                      <table className="saas-table" style={{ width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th>Student Name</th>
+                            <th>Enrollment No</th>
+                            <th>Course</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {assignedStudents.map(student => (
+                            <tr key={student.id} style={{ transition: 'background-color 0.2s' }} onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'} onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                              <td style={{ fontWeight: '500' }}>{student.name}</td>
+                              <td>{student.enrollmentNo || student.id.substring(0,6)}</td>
+                              <td>{student.course}</td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedStudentForMarks(student);
+                                    setFacultyMarksGlobalExamName('');
+                                    setExamDate('');
+                                    setExamSubjects([{ name: '', maxMarks: 100, obtained: '' }]);
+                                    setIsMarksDetailsModalVisible(true);
+                                  }} style={{ padding: '6px 12px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>Enter Marks</button>
+                                  
+                                  {student.examHistory && student.examHistory.length > 0 && (
+                                    <button onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedStudentForViewMarks(student);
+                                      setIsViewMarksModalVisible(true);
+                                    }} style={{ padding: '6px 12px', backgroundColor: 'var(--indigo-100, #e0e7ff)', color: 'var(--indigo-700, #4338ca)', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>View</button>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {studentsInCourse.map(student => (
-                              <tr key={student.id}>
-                                <td>{student.name}</td>
-                                <td>{student.enrollmentNo || student.enrollmentNumber || 'N/A'}</td>
-                                <td>
-                                  <input 
-                                    type="number" 
-                                    placeholder="e.g. 85" 
-                                    className="native-form-input saas-v3-form-input" 
-                                    style={{ maxWidth: '100px' }}
-                                    value={facultyMarksFormData[student.id]?.marks || ''}
-                                    onChange={(e) => setFacultyMarksFormData(prev => ({
-                                      ...prev, 
-                                      [student.id]: { ...prev[student.id], marks: e.target.value }
-                                    }))}
-                                  />
-                                </td>
-                                <td>
-                                  <input 
-                                    type="text" 
-                                    placeholder="e.g. A" 
-                                    className="native-form-input saas-v3-form-input" 
-                                    style={{ maxWidth: '80px' }}
-                                    value={facultyMarksFormData[student.id]?.grade || ''}
-                                    onChange={(e) => setFacultyMarksFormData(prev => ({
-                                      ...prev, 
-                                      [student.id]: { ...prev[student.id], grade: e.target.value }
-                                    }))}
-                                  />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      <button 
-                        onClick={async () => {
-                          if (!facultyMarksGlobalExamName.trim()) {
-                            message.warning('Please enter an Exam Name first.');
-                            return;
-                          }
-                          const entriesToSubmit = Object.entries(facultyMarksFormData).filter(([id, data]) => data.marks && data.grade);
-                          if (entriesToSubmit.length === 0) {
-                            message.warning('Please fill Marks and Grade for at least one student before submitting.');
-                            return;
-                          }
-
-                          setSubmittingMarks(true);
-                          try {
-                            const promises = entriesToSubmit.map(([studentId, data]) => 
-                              addStudentMarks(user.organizationId, studentId, facultyMarksGlobalExamName.trim(), Number(data.marks), data.grade, user.organizationAccessId)
-                            );
-                            await Promise.all(promises);
-                            message.success(`Successfully recorded marks for ${entriesToSubmit.length} students!`);
-                            setFacultyMarksFormData({}); // clear the form
-                            setFacultyMarksGlobalExamName(''); // clear exam name
-                          } catch(err) {
-                            message.error(err.message);
-                          } finally {
-                            setSubmittingMarks(false);
-                          }
-                        }}
-                        className="native-form-submit" 
-                        disabled={submittingMarks}
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '250px' }}
-                      >
-                        {submittingMarks ? <Clock size={18} /> : <CheckCircle size={18} />} 
-                        {submittingMarks ? 'Saving...' : 'Submit Marks'}
-                      </button>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* View Marks Modal */}
+            {isViewMarksModalVisible && selectedStudentForViewMarks && (
+              <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ backgroundColor: 'var(--card-bg)', padding: '24px', borderRadius: '12px', width: '600px', maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto', position: 'relative', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}>
+                  <button 
+                    onClick={() => setIsViewMarksModalVisible(false)} 
+                    style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--slate-400, #94a3b8)' }}
+                  >
+                    <X style={{ width: '24px', height: '24px' }} />
+                  </button>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: 'bold' }}>Marks History: {selectedStudentForViewMarks.name}</h3>
+                  
+                  {selectedStudentForViewMarks.examHistory && selectedStudentForViewMarks.examHistory.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {selectedStudentForViewMarks.examHistory.slice().reverse().map((exam, i) => (
+                        <div key={i} style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                          <div style={{ backgroundColor: 'var(--bg-hover)', padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'var(--text-main)' }}>Exam: {exam.examName || exam.testName}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--slate-500)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Calendar style={{ width: '14px', height: '14px' }} /> {exam.examDate || exam.testDate || (exam.date && exam.date.split('T')[0])}
+                            </div>
+                          </div>
+                          <div style={{ padding: '16px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--border-color)', fontSize: '12px', color: '#64748b' }}>Subject</th>
+                                  <th style={{ textAlign: 'center', padding: '8px', borderBottom: '1px solid var(--border-color)', fontSize: '12px', color: '#64748b' }}>Max Marks</th>
+                                  <th style={{ textAlign: 'center', padding: '8px', borderBottom: '1px solid var(--border-color)', fontSize: '12px', color: '#64748b' }}>Obtained</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {exam.subjects && exam.subjects.map((sub, idx) => (
+                                  <tr key={idx}>
+                                    <td style={{ padding: '8px', borderBottom: '1px solid var(--border-color)', fontWeight: '500' }}>{sub.name}</td>
+                                    <td style={{ textAlign: 'center', padding: '8px', borderBottom: '1px solid var(--border-color)' }}>{sub.maxMarks}</td>
+                                    <td style={{ textAlign: 'center', padding: '8px', borderBottom: '1px solid var(--border-color)' }}>{sub.obtained}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: 'var(--indigo-50, #eef2ff)', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', color: 'var(--indigo-900)' }}>
+                              <span>Total: {exam.totalObtainedMarks || exam.totalObtained} / {exam.totalMaxMarks || exam.totalMax}</span>
+                              <span>Percentage: {exam.percentage}%</span>
+                              <span>Grade: {exam.grade}</span>
+                            </div>
+                            <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--slate-400)' }}>
+                              Entered By: {exam.enteredBy || exam.uploadedByStaffName || 'Staff'} ({exam.staffRole}) on {exam.uploadedDate ? new Date(exam.uploadedDate).toLocaleDateString() : 'N/A'}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No marks history available.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === '7' && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden w-full mt-6">
+                <h3 className="text-lg font-semibold mb-4 text-slate-800" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <BookOpen className="w-5 h-5 text-blue-600" /> Course Materials Management
+                </h3>
+                
+                <div style={{ display: 'flex', gap: '24px' }}>
+                  {/* Upload Form */}
+                  <div style={{ flex: 1, backgroundColor: 'var(--bg-hover)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                    <h4 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>Upload New Material</h4>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!materialFile || !materialTitle) return message.warning('Title and File are required');
+                      if (materialSelectedStudents.length === 0) return message.warning('Select at least one student');
+                      
+                      setUploadingMaterial(true);
+                      try {
+                        await uploadCourseMaterial(user.organizationId, user.id, materialFile, materialTitle, materialDesc, materialSelectedStudents);
+                        message.success('Material uploaded and assigned successfully!');
+                        setMaterialTitle('');
+                        setMaterialDesc('');
+                        setMaterialFile(null);
+                        setMaterialSelectedStudents([]);
+                        // Refresh materials list
+                        const materials = await getCourseMaterialsForStaff(user.id);
+                        setStaffMaterials(materials);
+                      } catch (err) {
+                        message.error(err.message);
+                      } finally {
+                        setUploadingMaterial(false);
+                      }
+                    }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Material Title</label>
+                        <input type="text" className="native-form-input" required value={materialTitle} onChange={e => setMaterialTitle(e.target.value)} />
+                      </div>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Description</label>
+                        <textarea className="native-form-input" rows="2" value={materialDesc} onChange={e => setMaterialDesc(e.target.value)} />
+                      </div>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>File (PDF, PPT, Video)</label>
+                        <input type="file" className="native-form-input" required onChange={e => setMaterialFile(e.target.files[0])} />
+                      </div>
+                      
+                      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
+                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Assign to Students</label>
+                        <select className="native-form-select" style={{ marginBottom: '8px', width: '100%' }} value={materialCourseFilter} onChange={e => setMaterialCourseFilter(e.target.value)}>
+                          <option value="">-- Filter by Course --</option>
+                          {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        
+                        <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px', backgroundColor: '#fff' }}>
+                          {studentList.filter(s => !materialCourseFilter || s.course === materialCourseFilter).map(student => (
+                            <div key={student.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+                              <input 
+                                type="checkbox" 
+                                id={`student_${student.id}`}
+                                checked={materialSelectedStudents.includes(student.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) setMaterialSelectedStudents([...materialSelectedStudents, student.id]);
+                                  else setMaterialSelectedStudents(materialSelectedStudents.filter(id => id !== student.id));
+                                }}
+                              />
+                              <label htmlFor={`student_${student.id}`}>{student.name} ({student.enrollmentNo || student.id.substring(0,6)})</label>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                          <button type="button" onClick={() => {
+                            const filtered = studentList.filter(s => !materialCourseFilter || s.course === materialCourseFilter).map(s => s.id);
+                            setMaterialSelectedStudents(Array.from(new Set([...materialSelectedStudents, ...filtered])));
+                          }} style={{ background: 'none', border: 'none', color: 'var(--blue-600)', cursor: 'pointer', padding: 0, marginRight: '12px' }}>Select All Visible</button>
+                          <button type="button" onClick={() => setMaterialSelectedStudents([])} style={{ background: 'none', border: 'none', color: 'var(--red-600)', cursor: 'pointer', padding: 0 }}>Clear All</button>
+                        </div>
+                      </div>
+
+                      <button type="submit" disabled={uploadingMaterial} style={{ padding: '10px', backgroundColor: 'var(--blue-600)', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                        {uploadingMaterial ? 'Uploading...' : 'Upload & Assign Material'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Materials List & Tracking */}
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>Uploaded Materials & Tracking</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '500px', overflowY: 'auto' }}>
+                      {staffMaterials.map(mat => (
+                        <div key={mat.id} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: '#fff' }}>
+                          <h5 style={{ margin: '0 0 4px 0', fontSize: '16px', color: 'var(--accent-royal-purple)' }}>{mat.title}</h5>
+                          <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>{mat.fileName} • Assigned to {mat.assignedStudentIds.length} students</p>
+                          
+                          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>View Status:</div>
+                            <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
+                              {mat.assignedStudentIds.map(sid => {
+                                const st = studentList.find(s => s.id === sid);
+                                const viewed = (mat.viewedBy || []).includes(sid);
+                                return (
+                                  <div key={sid} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid var(--border-color)' }}>
+                                    <span>{st ? st.name : sid}</span>
+                                    {viewed ? <span style={{ color: 'var(--green-600)', fontWeight: 'bold' }}>Viewed</span> : <span style={{ color: 'var(--red-500)' }}>Pending</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {staffMaterials.length === 0 && <p style={{ color: '#64748b' }}>No materials uploaded yet.</p>}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1460,13 +1924,30 @@ const StaffDashboard = () => {
             </div>
             <div>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Email</label>
-              <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({email: e.target.value})} defaultValue={editForm.getFieldValue('email')} />
+              <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                editForm.setFieldsValue({email: e.target.value});
+                if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                  e.target.setCustomValidity('Please enter a valid Email address');
+                } else {
+                  e.target.setCustomValidity('');
+                }
+              }} defaultValue={editForm.getFieldValue('email')} />
             </div>
             <div>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Phone Number</label>
               <div style={{ display: 'flex', alignItems: 'stretch' }}>
                 <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: '#64748b' }}>+91 (IN)</span>
-                <input type="text" placeholder="Student Phone" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({phoneNumber: e.target.value})} defaultValue={editForm.getFieldValue('phoneNumber')?.replace('+91', '')} />
+                <input type="text" placeholder="Student Phone" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => {
+                  let val = e.target.value.replace(/\D/g, '');
+                  if (val.length > 10) val = val.slice(0, 10);
+                  e.target.value = val;
+                  editForm.setFieldsValue({phoneNumber: val});
+                  if (!/^[6-9]\d{9}$/.test(val)) {
+                    e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                  } else {
+                    e.target.setCustomValidity('');
+                  }
+                }} defaultValue={editForm.getFieldValue('phoneNumber')?.replace('+91', '')} />
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1513,7 +1994,17 @@ const StaffDashboard = () => {
                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
                 <div style={{ display: 'flex', alignItems: 'stretch' }}>
                   <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: '#64748b' }}>+91 (IN)</span>
-                  <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({parentPhone: e.target.value})} defaultValue={editForm.getFieldValue('parentPhone')?.replace('+91', '')} />
+                  <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, '');
+                    if (val.length > 10) val = val.slice(0, 10);
+                    e.target.value = val;
+                    editForm.setFieldsValue({parentPhone: val});
+                    if (val && !/^[6-9]\d{9}$/.test(val)) {
+                      e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                    } else {
+                      e.target.setCustomValidity('');
+                    }
+                  }} defaultValue={editForm.getFieldValue('parentPhone')?.replace('+91', '')} />
                 </div>
               </div>
               <div>
@@ -1591,108 +2082,7 @@ const StaffDashboard = () => {
       </div>
     )}
 
-    {isFeeModalVisible && (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Offline Fee Collection - {selectedStudentForFee?.name || ''}</h2>
-          <div style={{ textAlign: 'center', margin: '12px 0' }}>
-            <span style={{ color: '#64748b' }}>Enter the fee amounts received via different modes.</span>
-          </div>
-          
-          <div style={{ padding: '16px', backgroundColor: 'var(--indigo-50, #eef2ff)', borderRadius: '8px', border: '1px solid var(--indigo-100, #e0e7ff)', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-              {logoUrl && <img src={logoUrl} alt="Org Logo" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />}
-              <div style={{ fontWeight: 'bold', fontSize: '18px', color: 'var(--indigo-900, #312e81)' }}>{user?.organizationName}</div>
-            </div>
-            <div style={{ fontSize: '16px', color: 'var(--indigo-700, #4338ca)' }}>Course: {selectedStudentForFee?.course || 'N/A'}</div>
-          </div>
-          
-          <form onSubmit={(e) => { e.preventDefault(); handleFeeSubmit(feeForm.getFieldsValue()); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Bill ID / Receipt Number</label>
-              <input type="text" placeholder="Enter manual Bill ID" required style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({billNumber: e.target.value})} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Payment Date</label>
-              <input type="date" required style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({paymentDate: e.target.value})} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Payment Time</label>
-              <input type="time" required style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({paymentTime: e.target.value})} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Cash Amount</label>
-              <input type="number" min="0" defaultValue="0" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({cashAmount: Number(e.target.value)})} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>UPI/GPay Amount</label>
-              <input type="number" min="0" defaultValue="0" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({upiAmount: Number(e.target.value)})} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Card Amount</label>
-              <input type="number" min="0" defaultValue="0" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({cardAmount: Number(e.target.value)})} />
-            </div>
-            
-            <div style={{ padding: '12px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-              <span>Total Paid = Cash + UPI + Card</span>
-              <span>₹ {totalFeePaid}</span>
-            </div>
-            
-            <div style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)' }}>
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Cashier Authentication</h4>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                 {user?.documents?.signatureUrl || user?.signatureUrl ? (
-                   <img src={user?.documents?.signatureUrl || user?.signatureUrl} alt="Signature" style={{ height: '48px', objectFit: 'contain' }} />
-                 ) : (
-                   <div style={{ height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', padding: '0 16px', fontSize: '14px', fontStyle: 'italic' }}>
-                     [Digital Signature Not Uploaded]
-                   </div>
-                 )}
-                 <div style={{ display: 'flex', flexDirection: 'column', fontSize: '14px', color: '#64748b' }}>
-                   <span style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
-                   <span style={{ fontSize: '12px' }}>Authorized Cashier</span>
-                 </div>
-              </div>
-            </div>
 
-            {isBillUploadEnabled && (
-              <div style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-hover)' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px' }}>Upload Manual Soft-Copy Receipt (Optional Image)</label>
-                <div style={{ border: '2px dashed var(--border-color)', borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer', backgroundColor: 'var(--card-bg)' }}>
-                   <input type="file" accept="image/*" onChange={async (e) => { 
-                     if(e.target.files && e.target.files.length > 0) { 
-                       feeForm.setFieldsValue({receiptFile: e.target.files[0]}); 
-                       try {
-                         await logTransaction('UPLOAD_BILL_DOCUMENT', {
-                           token: '[Aadhaar Redacted]',
-                           studentId: selectedStudentForFee?.id,
-                           staffId: user?.id,
-                           staffName: user?.name
-                         });
-                       } catch(err) {}
-                     } 
-                   }} style={{ display: 'none' }} id="bill-upload-input" />
-                   <label htmlFor="bill-upload-input" style={{ cursor: 'pointer', color: 'var(--blue-500, #3b82f6)' }}>
-                     <div style={{ fontSize: '32px', marginBottom: '8px' }}>📁</div>
-                     Click here to select file
-                   </label>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Remarks (Optional)</label>
-              <textarea rows={3} placeholder="Enter any transaction notes" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => feeForm.setFieldsValue({remarks: e.target.value})} />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-              <button type="button" onClick={() => setIsFeeModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
-              <button type="submit" disabled={loading} style={{ padding: '8px 16px', backgroundColor: 'var(--green-600, #16a34a)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Record Payment</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )}
 
 
       {globalSearchModalVisible && (

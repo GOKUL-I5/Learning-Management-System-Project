@@ -1,15 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import { Form, Input, Button, Card, message, Layout, Typography, Table, Popconfirm, Modal, Select, DatePicker, TimePicker, Upload, Menu, Dropdown, Tabs, Collapse } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
-import { createStaff, logoutUser, createStudent, getOrganizationStaff, getOrganizationStudents, subscribeToOrganizationStudents, fetchAdmissionsHierarchy, getISOWeekNumber, migrateAllStudentsToHierarchy, deleteUserDoc, updateUserDoc, createCourse, getOrganizationCourses, createCourseAssignment, getCourseAssignments, uploadCourseContentFile, deleteCourseAssignment, updateOrganizationLogo, getOrganizationDetails, getAttendanceHistoryByOrg, subscribeToAttendanceHistoryByOrg, updateCourse, createReceipt, updateStudentStatus, deleteCourse, deleteCourseModule, listenToOrganizationStatus, logTransaction, addStudentMarks, getStudentMarks } from '../../firebase/services';
-import { Users, GraduationCap, LogOut, ShieldCheck, BookOpen, Calendar, UploadCloud, Settings, Briefcase, Search, Image as ImageIcon, Pencil, Trash2, FileSpreadsheet, ClipboardList, Download, CheckCircle, XCircle, Banknote, Clock, X, UserPlus, FileText, Award, Eye, ChevronDown, Grid, Filter, ArrowDownUp, TrendingUp, TrendingDown, Home, LineChart, PieChart, Box, MessageSquare, Moon, Sliders } from 'lucide-react';
+import { createStaff, logoutUser, createStudent, getOrganizationStaff, getOrganizationStudents, subscribeToOrganizationStudents, fetchAdmissionsHierarchy, getISOWeekNumber, migrateAllStudentsToHierarchy, deleteUserDoc, updateUserDoc, createCourse, getOrganizationCourses, createCourseAssignment, getCourseAssignments, uploadCourseContentFile, deleteCourseAssignment, updateOrganizationLogo, getOrganizationDetails, getAttendanceHistoryByOrg, subscribeToAttendanceHistoryByOrg, updateCourse, createReceipt, updateStudentStatus, deleteCourse, deleteCourseModule, listenToOrganizationStatus, logTransaction, addStudentMarks, getStudentMarks, checkDuplicateReceipt } from '../../firebase/services';
+import { Users, GraduationCap, LogOut, ShieldCheck, BookOpen, Calendar, UploadCloud, Settings, Briefcase, Search, Image as ImageIcon, Pencil, Trash2, FileSpreadsheet, ClipboardList, Download, CheckCircle, XCircle, Banknote, Clock, X, UserPlus, FileText, Award, Eye, ChevronDown, Grid, Filter, TrendingUp, TrendingDown, Home, LineChart, PieChart, Box, MessageSquare, Moon, Sliders, Plus } from 'lucide-react';
 import { Checkbox } from 'antd';
 import './AdminDashboard.css';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
+
+const CustomPagination = ({ currentPage, totalItems, itemsPerPage, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', marginTop: '16px', padding: '8px 0' }}>
+      <button 
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        style={{
+          padding: '6px 12px',
+          borderRadius: '6px',
+          border: '1px solid var(--border-color)',
+          backgroundColor: currentPage === 1 ? 'var(--bg-hover)' : 'var(--card-bg)',
+          color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-main)',
+          cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+          fontWeight: 'bold',
+          transition: 'all 0.2s'
+        }}
+      >
+        &lt;
+      </button>
+      <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)', margin: '0 8px' }}>
+        {currentPage} <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>of {totalPages}</span>
+      </span>
+      <button 
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        style={{
+          padding: '6px 12px',
+          borderRadius: '6px',
+          border: '1px solid var(--border-color)',
+          backgroundColor: currentPage === totalPages ? 'var(--bg-hover)' : 'var(--card-bg)',
+          color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-main)',
+          cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+          fontWeight: 'bold',
+          transition: 'all 0.2s'
+        }}
+      >
+        &gt;
+      </button>
+    </div>
+  );
+};
 
 const AdminDashboard = () => {
   const userStr = localStorage.getItem('lms_user');
@@ -31,6 +76,7 @@ const AdminDashboard = () => {
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [facultySearchQuery, setFacultySearchQuery] = useState('');
+  const [facultyRoleFilter, setFacultyRoleFilter] = useState('All');
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const selectedStudentIds = Form.useWatch('studentIds', assignmentForm) || [];
   
@@ -52,6 +98,14 @@ const AdminDashboard = () => {
   
   const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const [selectedStudentForProfile, setSelectedStudentForProfile] = useState(null);
+
+  const [isAddSubjectModalVisible, setIsAddSubjectModalVisible] = useState(false);
+  const [isEditCourseModalVisible, setIsEditCourseModalVisible] = useState(false);
+  const [isEditSubjectModalVisible, setIsEditSubjectModalVisible] = useState(false);
+  const [courseToEdit, setCourseToEdit] = useState(null);
+  const [subjectToEdit, setSubjectToEdit] = useState('');
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [newCourseName, setNewCourseName] = useState('');
   
   const [isStatusModalVisible, setIsStatusModalVisible] = useState(false);
   const [selectedStudentForStatus, setSelectedStudentForStatus] = useState(null);
@@ -71,14 +125,49 @@ const AdminDashboard = () => {
   // Marks Management State
   const [marksSearchText, setMarksSearchText] = useState('');
   const [marksCourseFilter, setMarksCourseFilter] = useState('All');
+  const [isMarksDetailsModalVisible, setIsMarksDetailsModalVisible] = useState(false);
+  const [selectedStudentForMarks, setSelectedStudentForMarks] = useState(null);
 
+  const avatarInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'my_lms_preset');
+
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'rdor42ow'}/image/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.secure_url) {
+        await updateUserDoc(user.id, { photoUrl: data.secure_url });
+        const updatedUser = { ...user, photoUrl: data.secure_url };
+        localStorage.setItem('lms_user', JSON.stringify(updatedUser));
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      message.error('Failed to upload avatar.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   // Reports Module State
   const [activeReportTab, setActiveReportTab] = useState('admission');
+  const [reportSearchQuery, setReportSearchQuery] = useState('');
   const [admissionReportCourseFilter, setAdmissionReportCourseFilter] = useState('All');
   const [isAdmissionSummaryModalVisible, setIsAdmissionSummaryModalVisible] = useState(false);
   const [drillDownPath, setDrillDownPath] = useState([]);
-  const [drillDownData, setDrillDownData] = useState([]);
+  const [drillDownData, setDrillDownData] = useState({ folders: [], students: [] });
   const [isDrillDownLoading, setIsDrillDownLoading] = useState(false);
 
   useEffect(() => {
@@ -97,13 +186,15 @@ const AdminDashboard = () => {
     fetchDrillDown();
   }, [drillDownPath, isAdmissionSummaryModalVisible, user?.organizationId]);
 
+  const [facultyCurrentPage, setFacultyCurrentPage] = useState(1);
+  const [courseCurrentPage, setCourseCurrentPage] = useState(1);
+  const [billingCurrentPage, setBillingCurrentPage] = useState(1);
   const [studentCurrentPage, setStudentCurrentPage] = useState(1);
-  const [globalMonthFilter, setGlobalMonthFilter] = useState('All');
-  const months = ['All', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const [studentTextSearch, setStudentTextSearch] = useState('');
   const [studentCourseFilter, setStudentCourseFilter] = useState('All');
   const [studentAgeFilter, setStudentAgeFilter] = useState('All');
   const [studentAcademicYearFilter, setStudentAcademicYearFilter] = useState('All');
+  const [studentSortOrder, setStudentSortOrder] = useState('');
 
   // Attendance Reports State
   const [attendanceReportTab, setAttendanceReportTab] = useState('daily');
@@ -119,105 +210,177 @@ const AdminDashboard = () => {
 
   // Billing Management State
   const [billingTab, setBillingTab] = useState('ledger');
-  const [billingRows, setBillingRows] = useState([
-    { id: Date.now(), date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) }
-  ]);
+  const [billingEntry, setBillingEntry] = useState(
+    { date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) }
+  );
+  const [billHistory, setBillHistory] = useState([]);
   const [billingStudentSearch, setBillingStudentSearch] = useState('');
+  const [billingSearchQuery, setBillingSearchQuery] = useState('');
 
   // Journey Hub Overlay States
   const [isJourneyAttendanceModalVisible, setIsJourneyAttendanceModalVisible] = useState(false);
   const [selectedJourneyAttendanceDate, setSelectedJourneyAttendanceDate] = useState(null);
   const [isJourneyFeeModalVisible, setIsJourneyFeeModalVisible] = useState(false);
+  const [isJourneyAcademicModalVisible, setIsJourneyAcademicModalVisible] = useState(false);
   const [isJourneyProfileModalVisible, setIsJourneyProfileModalVisible] = useState(false);
 
-  const handleBillingRowChange = (id, field, value) => {
-    setBillingRows(prevRows => prevRows.map(row => {
-      if (row.id === id) {
-        const updatedRow = { ...row, [field]: value };
-        if (field === 'enrollmentNo') {
-          const student = studentList.find(s => s.enrollmentNo === value);
-          if (student) {
-            updatedRow.studentId = student.id;
-            updatedRow.studentName = student.name;
-            updatedRow.course = student.course || 'N/A';
-            updatedRow.totalFees = student.courseFee || 28000;
-            const paid = updatedRow.splitMode ? (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0) + (Number(updatedRow.cardAmount) || 0) : (Number(updatedRow.amountPaid) || 0);
-            updatedRow.balance = updatedRow.totalFees - paid;
-            updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
-          } else {
-            updatedRow.studentId = null;
-            updatedRow.studentName = '';
-            updatedRow.course = '';
-            updatedRow.totalFees = 0;
-            const paid = updatedRow.splitMode ? (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0) + (Number(updatedRow.cardAmount) || 0) : (Number(updatedRow.amountPaid) || 0);
-            updatedRow.balance = 0 - paid;
-            updatedRow.status = 'Pending';
+  const handleBillingEntryChange = (field, value) => {
+    setBillingEntry(prev => {
+      const updatedRow = { ...prev, [field]: value };
+      if (field === 'enrollmentNo') {
+        const student = studentList.find(s => s.enrollmentNo === value);
+        if (student) {
+          updatedRow.studentId = student.id;
+          updatedRow.studentName = student.name;
+          updatedRow.course = student.course || 'N/A';
+          updatedRow.totalFees = student.courseFee || 28000;
+          if (updatedRow.mode === 'Split') {
+            updatedRow.amountPaid = (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0);
           }
-        }
-        if (field === 'amountPaid' || field === 'cashAmount' || field === 'upiAmount' || field === 'cardAmount' || field === 'splitMode') {
-          const paid = updatedRow.splitMode ? (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0) + (Number(updatedRow.cardAmount) || 0) : (Number(updatedRow.amountPaid) || 0);
+          const paid = Number(updatedRow.amountPaid) || 0;
           updatedRow.balance = updatedRow.totalFees - paid;
           updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
+        } else {
+          updatedRow.studentId = null;
+          updatedRow.studentName = '';
+          updatedRow.course = '';
+          updatedRow.totalFees = 0;
+          if (updatedRow.mode === 'Split') {
+            updatedRow.amountPaid = (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0);
+          }
+          const paid = Number(updatedRow.amountPaid) || 0;
+          updatedRow.balance = 0 - paid;
+          updatedRow.status = 'Pending';
         }
-        return updatedRow;
       }
-      return row;
-    }));
+      if (field === 'amountPaid' || field === 'cashAmount' || field === 'upiAmount' || field === 'mode') {
+        if (updatedRow.mode === 'Split') {
+          updatedRow.amountPaid = (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0);
+        }
+        const paid = Number(updatedRow.amountPaid) || 0;
+        updatedRow.balance = updatedRow.totalFees - paid;
+        updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
+      }
+      return updatedRow;
+    });
   };
 
-  const handleSaveBillingRow = async (row) => {
+  const fetchBillHistory = async () => {
+    try {
+      const { getAllFeeTransactions } = await import('../../firebase/services');
+      const { db } = await import('../../firebase/config');
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const transactions = await getAllFeeTransactions();
+      
+      const dups = transactions.filter(t => t.billNumber === '134');
+      if (dups.length > 1) {
+        console.log("Deleting duplicate:", dups[1].id);
+        await deleteDoc(doc(db, 'fee_transactions', dups[1].id));
+        transactions.splice(transactions.findIndex(t => t.id === dups[1].id), 1);
+      }
+
+      const orgStudentIds = new Set(studentList.map(s => s.id));
+      const orgTransactions = transactions.filter(t => orgStudentIds.has(t.studentId));
+      setBillHistory(orgTransactions);
+    } catch (error) {
+      console.error("Error fetching bill history:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (studentList.length > 0) {
+      fetchBillHistory();
+    }
+  }, [studentList]);
+
+  const handleSaveBillingEntry = async () => {
+    const row = billingEntry;
     if (!row.studentId) {
       message.error("Please enter a valid Enrollment No.");
       return;
     }
-      const amount = row.splitMode ? (Number(row.cashAmount) || 0) + (Number(row.upiAmount) || 0) + (Number(row.cardAmount) || 0) : (Number(row.amountPaid) || 0);
-      if (amount <= 0) {
-        message.error("Amount Paid must be greater than 0");
+    const amount = Number(row.amountPaid) || 0;
+    if (amount <= 0) {
+      message.error("Amount Paid must be greater than 0");
+      return;
+    }
+
+    if (row.mode === 'Split') {
+      const splitSum = (Number(row.cashAmount) || 0) + (Number(row.upiAmount) || 0);
+      if (splitSum !== amount) {
+        message.error("Split amounts (Cash + GPay) must strictly equal the Total Payment Amount.");
         return;
       }
-      setLoading(true);
-      try {
-        await logTransaction('BILLING_MANAGEMENT', {
-          studentId: row.studentId,
-          adminId: user?.id,
-          amount: amount,
-          actionContext: 'Spreadsheet Billing Payment'
-        });
-        const receiptData = {
-          studentId: row.studentId,
-          course: row.course || 'N/A',
-          paymentSplit: row.splitMode ? {
-            cash: Number(row.cashAmount) || 0,
-            upi: Number(row.upiAmount) || 0,
-            card: Number(row.cardAmount) || 0
-          } : { 
-            cash: row.mode === 'Cash' ? amount : 0, 
-            upi: row.mode === 'GPay' ? amount : 0, 
-            card: row.mode === 'Card' ? amount : 0 
-          },
-          totalAmount: amount, // Represents cumulative sum as per plan
-          billNumber: row.billCode || `BILL-${Date.now()}`,
-          paymentDate: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
-          paymentTime: new Date().toISOString(),
-          dueDate: row.dueDate ? new Date(row.dueDate).toISOString() : null,
-          payer: row.payer || 'Student',
-          cashier: row.cashier || user?.name || 'Admin',
-          remarks: 'Spreadsheet Billing Grid'
-        };
-        await createReceipt(receiptData);
-        
-        const student = studentList.find(s => s.id === row.studentId);
-        const courseFee = student?.courseFee || 28000;
-        const newPaid = amount;
-        const newPending = courseFee - newPaid;
-        await updateUserDoc(row.studentId, {
-          paidFee: newPaid,
-          pendingFee: newPending
-        });
-        message.success("Payment recorded successfully!");
-        fetchStaffAndStudents();
-        // Add a fresh row
-        setBillingRows(prev => [...prev, { id: Date.now(), date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: row.billMonth || new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) }]);
+    }
+
+    setLoading(true);
+    try {
+      const billNumber = row.billCode || `BILL-${Date.now()}`;
+      const isDuplicate = await checkDuplicateReceipt(billNumber);
+      if (isDuplicate) {
+        message.warning("It's already saved!");
+        setLoading(false);
+        return;
+      }
+
+      await logTransaction('BILLING_MANAGEMENT', {
+        studentId: row.studentId,
+        adminId: user?.id,
+        amount: amount,
+        actionContext: 'Single Slot Billing Payment'
+      });
+      const receiptData = {
+        studentId: row.studentId,
+        course: row.course || 'N/A',
+        paymentMode: row.mode,
+        cashAmount: row.mode === 'Split' ? (Number(row.cashAmount) || 0) : 0,
+        gpayAmount: row.mode === 'Split' ? (Number(row.upiAmount) || 0) : 0,
+        paymentSplit: row.mode === 'Split' ? {
+          cash: Number(row.cashAmount) || 0,
+          upi: Number(row.upiAmount) || 0,
+          card: 0
+        } : { 
+          cash: row.mode === 'Cash' ? amount : 0, 
+          upi: row.mode === 'GPay' ? amount : 0, 
+          card: row.mode === 'Card' ? amount : 0 
+        },
+        totalAmount: amount, 
+        billNumber: billNumber,
+        paymentDate: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+        paymentTime: new Date().toISOString(),
+        dueDate: row.dueDate ? new Date(row.dueDate).toISOString() : null,
+        payer: row.payer || 'Student',
+        cashier: row.cashier || user?.name || 'Admin',
+        remarks: 'Single Slot Entry'
+      };
+      await createReceipt(receiptData);
+      
+      const student = studentList.find(s => s.id === row.studentId);
+      const courseFee = student?.courseFee || 28000;
+      const currentPaid = student?.paidFee || student?.paidAmount || 0;
+      const newPaid = currentPaid + amount;
+      const newPending = courseFee - newPaid;
+      
+      const currentLedger = student?.feeLedger || [];
+      const newBill = {
+        receiptId: "REC-" + Date.now(),
+        amountPaid: Number(amount),
+        totalPaidSoFar: newPaid,
+        remainingBalance: newPending,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN'),
+        status: newPending <= 0 ? 'Paid' : 'Partial'
+      };
+
+      await updateUserDoc(row.studentId, {
+        paidFee: newPaid,
+        pendingFee: newPending,
+        feeLedger: [...currentLedger, newBill]
+      });
+      message.success("Payment recorded successfully!");
+      fetchStaffAndStudents();
+      fetchBillHistory();
+      setBillingEntry({ date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) });
     } catch (error) {
       message.error(error.message);
     } finally {
@@ -303,6 +466,13 @@ const AdminDashboard = () => {
     }
     setLoading(true);
     try {
+      const isDuplicate = await checkDuplicateReceipt(values.billNumber);
+      if (isDuplicate) {
+        message.warning("It's already saved!");
+        setLoading(false);
+        return;
+      }
+
       await logTransaction('OFFLINE_FEE_COLLECTION', {
         studentId: selectedStudentForFee.id,
         adminId: user?.id,
@@ -327,14 +497,26 @@ const AdminDashboard = () => {
       
       await createReceipt(receiptData);
       
-      const currentPaid = selectedStudentForFee.paidFee || 0;
+      const currentPaid = selectedStudentForFee?.paidFee || selectedStudentForFee?.paidAmount || 0;
       const courseFee = selectedStudentForFee.courseFee || 28000;
       const newPaid = currentPaid + totalFeePaid;
       const newPending = courseFee - newPaid;
       
+      const currentLedger = selectedStudentForFee.feeLedger || [];
+      const newBill = {
+        receiptId: "REC-" + Date.now(),
+        amountPaid: Number(totalFeePaid),
+        totalPaidSoFar: newPaid,
+        remainingBalance: newPending,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN'),
+        status: newPending <= 0 ? 'Paid' : 'Partial'
+      };
+
       await updateUserDoc(selectedStudentForFee.id, {
         paidFee: newPaid,
-        pendingFee: newPending
+        pendingFee: newPending,
+        feeLedger: [...currentLedger, newBill]
       });
       
       message.success("Fee collected successfully!");
@@ -448,7 +630,8 @@ const AdminDashboard = () => {
       degree: record.degree !== undefined ? record.degree : "",
       address: record.address !== undefined ? record.address : "",
       experience: record.experience !== undefined ? record.experience : "",
-      facultyId: record.facultyId !== undefined ? record.facultyId : ""
+      facultyId: record.facultyId !== undefined ? record.facultyId : "",
+      facultyRole: record.facultyRole || record.role !== 'staff' ? record.role : ""
     });
     setIsEditModalVisible(true);
   };
@@ -469,6 +652,7 @@ const AdminDashboard = () => {
         address: values.address !== undefined ? values.address : (editingUser?.address || ""),
         experience: values.experience !== undefined ? values.experience : (editingUser?.experience || ""),
         facultyId: values.facultyId !== undefined ? values.facultyId : (editingUser?.facultyId || ""),
+        facultyRole: values.facultyRole !== undefined ? values.facultyRole : (editingUser?.facultyRole || ""),
       };
 
       // Ensure no undefined values are sent to Firebase updateDoc
@@ -502,6 +686,7 @@ const AdminDashboard = () => {
   const staffColumns = [
     { title: 'Faculty ID', dataIndex: 'facultyId', key: 'facultyId', width: 120, render: text => text || 'N/A' },
     { title: 'Name', dataIndex: 'name', key: 'name', width: 150 },
+    { title: 'Role', dataIndex: 'facultyRole', key: 'facultyRole', width: 150, render: (text, record) => text || (record.role !== 'staff' ? record.role : 'N/A') },
     { title: 'Email', dataIndex: 'email', key: 'email', width: 250 },
     { title: 'Actions', key: 'actions', width: 150, align: 'center', render: (_, record) => (
       <div className="flex gap-4 items-center justify-center">
@@ -668,11 +853,7 @@ const AdminDashboard = () => {
       const academicYear = getAcademicYearFromDOJ(s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString() : null));
       const matchAcademicYear = studentAcademicYearFilter === 'All' || academicYear === studentAcademicYearFilter;
 
-      const dateObj = s.dateOfJoining ? new Date(s.dateOfJoining) : (s.createdAt ? new Date(s.createdAt.seconds * 1000) : null);
-      const studentMonth = dateObj ? dateObj.toLocaleString('default', { month: 'long' }) : null;
-      const matchGlobalMonth = globalMonthFilter === 'All' || studentMonth === globalMonthFilter;
-
-      return matchSearch && matchCourse && matchAge && matchAcademicYear && matchGlobalMonth;
+      return matchSearch && matchCourse && matchAge && matchAcademicYear;
     });
   };
 
@@ -779,6 +960,52 @@ const AdminDashboard = () => {
       message.error(error.message);
     }
   };
+
+  const handleAddSubjectToCourse = async () => {
+    if (!newSubjectName.trim() || !courseToEdit) return;
+    try {
+      const updatedModules = courseToEdit.modules ? `${courseToEdit.modules}\n${newSubjectName.trim()}` : newSubjectName.trim();
+      await updateCourse(courseToEdit.id, { modules: updatedModules });
+      message.success("Module added successfully");
+      setIsAddSubjectModalVisible(false);
+      setNewSubjectName('');
+      fetchStaffAndStudents();
+    } catch (error) {
+      message.error(error.message);
+    }
+  };
+
+  const handleEditCourseName = async () => {
+    if (!newCourseName.trim() || !courseToEdit) return;
+    try {
+      await updateCourse(courseToEdit.id, { name: newCourseName.trim() });
+      message.success("Course renamed successfully");
+      setIsEditCourseModalVisible(false);
+      setNewCourseName('');
+      fetchStaffAndStudents();
+    } catch (error) {
+      message.error(error.message);
+    }
+  };
+
+  const handleEditSubjectName = async () => {
+    if (!newSubjectName.trim() || !courseToEdit || !subjectToEdit) return;
+    try {
+      const modulesList = courseToEdit.modules.split(/[\n,]+/).map(m => m.trim()).filter(m => m);
+      const index = modulesList.indexOf(subjectToEdit);
+      if (index !== -1) {
+        modulesList[index] = newSubjectName.trim();
+        await updateCourse(courseToEdit.id, { modules: modulesList.join('\n') });
+        message.success("Module renamed successfully");
+        setIsEditSubjectModalVisible(false);
+        setNewSubjectName('');
+        fetchStaffAndStudents();
+      }
+    } catch (error) {
+      message.error(error.message);
+    }
+  };
+
 
   const assignmentColumns = [
     { title: 'Course Name', dataIndex: 'courseName', key: 'courseName', width: 150 },
@@ -1045,19 +1272,18 @@ const AdminDashboard = () => {
         div.search-bar-wrapper { position: relative !important; display: flex !important; align-items: center !important; }
       `}</style>
       {/* Sidebar Navigation */}
-      <aside className="uxer-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: '24px 16px' }}>
-        <div className="uxer-sidebar-logo" style={{ marginBottom: '24px', padding: '0 8px' }}>
-          <span style={{ fontSize: '24px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px' }}>AASC</span>
+      <aside className="uxer-sidebar">
+        <div className="uxer-sidebar-logo">
+          {logoUrl ? <img src={logoUrl} alt="Org Logo" style={{ maxHeight: '32px', maxWidth: '100%', objectFit: 'contain' }} /> : null}
+          <span style={{ fontSize: '20px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.organizationName || 'AASC'}</span>
         </div>
         
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto' }}>
-          <div className="uxer-sidebar-item"><Home className="w-5 h-5" /> Dashboard</div>
-          <div className="uxer-sidebar-item"><CheckCircle className="w-5 h-5" /> Analytics</div>
-          <div className="uxer-sidebar-item"><PieChart className="w-5 h-5" /> Insights</div>
+          <div className="uxer-sidebar-item" style={{ fontWeight: '800', fontSize: '16px', color: '#111111' }}><Home className="w-5 h-5" /> Dashboard</div>
           
           <div onClick={() => setActiveTab('1')} className={`uxer-sidebar-item ${activeTab === '1' ? 'active' : ''}`}><Users className="w-5 h-5" /> Manage Faculty</div>
           <div onClick={() => setActiveTab('2')} className={`uxer-sidebar-item ${(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') ? 'active' : ''}`}><Users className="w-5 h-5" /> Manage Students</div>
-          <div onClick={() => setActiveTab('journey')} className={`uxer-sidebar-item ${activeTab === 'journey' ? 'active' : ''}`}><GraduationCap className="w-5 h-5" /> Student Journey Hub</div>
+
           <div onClick={() => setActiveTab('3')} className={`uxer-sidebar-item ${activeTab === '3' ? 'active' : ''}`}><BookOpen className="w-5 h-5" /> Course Management</div>
           <div onClick={() => setActiveTab('view-courses')} className={`uxer-sidebar-item ${activeTab === 'view-courses' ? 'active' : ''}`}><Eye className="w-5 h-5" /> View Course</div>
           <div onClick={() => setActiveTab('billing')} className={`uxer-sidebar-item ${activeTab === 'billing' ? 'active' : ''}`}><Banknote className="w-5 h-5" /> Billing Management</div>
@@ -1065,17 +1291,31 @@ const AdminDashboard = () => {
           <div onClick={() => setActiveTab('reports')} className={`uxer-sidebar-item ${activeTab === 'reports' ? 'active' : ''}`}><FileText className="w-5 h-5" /> Reports</div>
           <div onClick={() => setActiveTab('marks')} className={`uxer-sidebar-item ${activeTab === 'marks' ? 'active' : ''}`}><Award className="w-5 h-5" /> Marks Management</div>
 
-          <div className="uxer-sidebar-item"><Sliders className="w-5 h-5" /> Configuration</div>
           <div onClick={() => setActiveTab('settings')} className={`uxer-sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}><Settings className="w-5 h-5" /> Settings</div>
         </div>
 
-        <div style={{ padding: '0 8px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#666666', fontSize: '14px', fontWeight: '500' }}>
-            <Moon className="w-5 h-5" /> Dark mode
+        <div style={{ padding: '0 8px', marginTop: 'auto' }}>
+        </div>
+
+        {/* Sidebar Bottom Profile Widget */}
+        <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', margin: 'auto -12px -20px -12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+            <input type="file" accept="image/*" style={{ display: 'none' }} ref={avatarInputRef} onChange={handleAvatarUpload} />
+            {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
+              <img onClick={() => avatarInputRef.current?.click()} src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0, opacity: uploadingAvatar ? 0.5 : 1, cursor: 'pointer' }} />
+            ) : (
+              <div onClick={() => avatarInputRef.current?.click()} style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0, opacity: uploadingAvatar ? 0.5 : 1, cursor: 'pointer' }}>
+                {uploadingAvatar ? <Clock style={{ width: '16px', height: '16px' }} /> : (user?.name?.charAt(0).toUpperCase() || 'A')}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.name || 'Admin'}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.organizationName || 'Organization'}</span>
+            </div>
           </div>
-          <div style={{ width: '36px', height: '20px', backgroundColor: '#111111', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
-            <div style={{ width: '16px', height: '16px', backgroundColor: '#FFFFFF', borderRadius: '50%', position: 'absolute', top: '2px', right: '2px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}></div>
-          </div>
+          <button onClick={logoutUser} style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s', color: 'var(--text-secondary)' }} title="Logout" onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
+            <LogOut style={{ width: '16px', height: '16px' }} />
+          </button>
         </div>
       </aside>
 
@@ -1084,26 +1324,45 @@ const AdminDashboard = () => {
         <header className="uxer-header">
           <div className="uxer-header-left">
             <div className="org-text">Organization</div>
-            <h1>Admin Dashboard</h1>
+            <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#000000', margin: 0 }}>Admin Dashboard</h1>
           </div>
           <div className="uxer-header-right">
-            <div className="uxer-search">
-              <Search className="w-4 h-4" style={{ color: '#999' }} />
-              <input type="text" placeholder="Search" />
-              <div className="uxer-shortcut">&#8984; F</div>
-            </div>
+            {!(activeTab === '3' || activeTab === 'view-courses' || activeTab === 'admission') && (
+              <div className="uxer-search">
+                <Search className="w-4 h-4" style={{ color: '#999' }} />
+                <input 
+                  type="text" 
+                  placeholder={`Search ${activeTab === '1' ? 'faculty' : (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2' ? 'students' : (activeTab === 'journey' ? 'student journey' : (activeTab === 'reports' ? 'reports...' : (activeTab === 'billing' ? 'billing records...' : (activeTab === 'marks' ? 'marks...' : '...')))))}`}
+                  value={activeTab === '1' ? facultySearchQuery : (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2' ? studentTextSearch : (activeTab === 'journey' ? journeySearchQuery : (activeTab === 'reports' ? reportSearchQuery : (activeTab === 'billing' ? billingSearchQuery : (activeTab === 'marks' ? marksSearchText : '')))))}
+                  onChange={(e) => {
+                    if (activeTab === '1') setFacultySearchQuery(e.target.value);
+                    else if (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') setStudentTextSearch(e.target.value);
+                    else if (activeTab === 'journey') setJourneySearchQuery(e.target.value);
+                    else if (activeTab === 'reports') setReportSearchQuery(e.target.value);
+                    else if (activeTab === 'billing') setBillingSearchQuery(e.target.value);
+                    else if (activeTab === 'marks') setMarksSearchText(e.target.value);
+                  }}
+                />
+                <div className="uxer-shortcut">&#8984; F</div>
+              </div>
+            )}
             
-            <div style={{ position: 'relative' }}>
-              <select 
-                value={globalMonthFilter} 
-                onChange={(e) => setGlobalMonthFilter(e.target.value)} 
-                className="uxer-dropdown-btn"
-                style={{ appearance: 'none', paddingRight: '28px', backgroundColor: 'transparent', outline: 'none', cursor: 'pointer' }}
-              >
-                {months.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <ChevronDown className="w-4 h-4" style={{ color: '#999', position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-            </div>
+            {activeTab === '1' && (
+              <div style={{ position: 'relative' }}>
+                <select 
+                  value={facultyRoleFilter} 
+                  onChange={(e) => setFacultyRoleFilter(e.target.value)} 
+                  className="uxer-dropdown-btn"
+                  style={{ appearance: 'none', paddingRight: '28px', backgroundColor: 'transparent', outline: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  <option value="All">All Roles</option>
+                  {Array.from(new Set(staffList.map(s => s.facultyRole || s.role).filter(Boolean).filter(r => r !== 'staff'))).map(role => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4" style={{ color: '#999', position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              </div>
+            )}
 
             {(activeTab === '1' || activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
               <button 
@@ -1127,14 +1386,11 @@ const AdminDashboard = () => {
             )}
             
             {(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
-              <button onClick={() => setIsAddStudentModalVisible(true)} className="uxer-btn-green">
+              <button onClick={() => setActiveTab('2-2')} className="uxer-btn-green">
                 + New Student
               </button>
             )}
             
-            <button onClick={logoutUser} className="uxer-icon-btn" title="Menu">
-              <Grid className="w-5 h-5" />
-            </button>
           </div>
         </header>
 
@@ -1149,38 +1405,45 @@ const AdminDashboard = () => {
                       <div className="uxer-tab active">All Faculty</div>
                     </div>
                     <div className="uxer-actions">
-                      <div className="uxer-search">
-                        <Search className="w-4 h-4" style={{ color: 'var(--uxer-text-muted)' }} />
-                        <input 
-                          type="text" 
-                          placeholder="Search faculty..." 
-                          value={facultySearchQuery}
-                          onChange={(e) => setFacultySearchQuery(e.target.value)}
-                        />
-                      </div>
-                      <button className="uxer-btn-green" onClick={() => setIsAddFacultyModalVisible(true)}>
-                        <UserPlus className="w-4 h-4" /> Add Faculty
-                      </button>
                     </div>
                   </div>
 
                   {(() => {
                     const filteredStaffList = staffList.filter(s => {
                       const q = facultySearchQuery.toLowerCase();
-                      return (s.name || '').toLowerCase().includes(q) || 
+                      const matchesSearch = (s.name || '').toLowerCase().includes(q) || 
                              (s.email || '').toLowerCase().includes(q) || 
                              (s.facultyId || '').toLowerCase().includes(q);
+                      const sRole = s.facultyRole || s.role;
+                      const matchesRole = facultyRoleFilter === 'All' || (sRole && typeof sRole === 'string' && sRole.trim() === facultyRoleFilter.trim());
+                      return matchesSearch && matchesRole;
                     });
                     return (
                       <div className="uxer-table-card">
-                        <Table dataSource={filteredStaffList} columns={staffColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} className="uxer-ant-table" />
+                        <Table 
+                          dataSource={filteredStaffList.slice((facultyCurrentPage - 1) * 20, facultyCurrentPage * 20)} 
+                          columns={staffColumns} 
+                          rowKey="id" 
+                          pagination={false} 
+                          scroll={{ x: 'max-content' }} 
+                          className="uxer-ant-table" 
+                        />
+                        <CustomPagination 
+                          currentPage={facultyCurrentPage} 
+                          totalItems={filteredStaffList.length} 
+                          itemsPerPage={20} 
+                          onPageChange={setFacultyCurrentPage} 
+                        />
                       </div>
                     );
                   })()}
                   {isAddFacultyModalVisible && (
                     <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
-                        <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Add New Faculty Member</h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Add New Faculty Member</h2>
+                          <button onClick={() => setIsAddFacultyModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+                        </div>
                         <form onSubmit={(e) => { 
                           e.preventDefault(); 
                           handleCreateStaff(staffForm.getFieldsValue()); 
@@ -1196,14 +1459,41 @@ const AdminDashboard = () => {
                           </div>
                           <div>
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Email</label>
-                            <input type="email" placeholder="Enter faculty email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({email: e.target.value})} />
+                            <input type="email" placeholder="Enter faculty email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                              staffForm.setFieldsValue({email: e.target.value});
+                              if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                                e.target.setCustomValidity('Please enter a valid Email address');
+                              } else {
+                                e.target.setCustomValidity('');
+                              }
+                            }} />
                           </div>
                           <div>
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Phone Number</label>
                             <div style={{ display: 'flex', alignItems: 'stretch' }}>
                               <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
-                              <input type="text" placeholder="Enter faculty phone number" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({phoneNumber: e.target.value})} />
+                              <input type="text" placeholder="Enter faculty phone number" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => {
+                                // Block letters by stripping non-digits if needed, or just warn
+                                let val = e.target.value.replace(/\D/g, '');
+                                if (val.length > 10) val = val.slice(0, 10);
+                                e.target.value = val;
+                                staffForm.setFieldsValue({phoneNumber: val});
+                                if (!/^[6-9]\d{9}$/.test(val)) {
+                                  e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                                } else {
+                                  e.target.setCustomValidity('');
+                                }
+                              }} />
                             </div>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Role</label>
+                            <input type="text" list="faculty-roles-add" placeholder="e.g. Programming Staff" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => staffForm.setFieldsValue({role: e.target.value})} />
+                            <datalist id="faculty-roles-add">
+                              {Array.from(new Set(staffList.map(s => s.role).filter(Boolean))).map(role => (
+                                <option key={role} value={role} />
+                              ))}
+                            </datalist>
                           </div>
                           <div>
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Age (Optional)</label>
@@ -1222,7 +1512,7 @@ const AdminDashboard = () => {
                             <textarea placeholder="Enter complete address" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box', minHeight: '80px', resize: 'vertical' }} onChange={(e) => staffForm.setFieldsValue({address: e.target.value})} />
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-                            <button type="button" onClick={() => setIsAddFacultyModalVisible(false)} style={{ padding: '10px 24px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                            <button type="button" onClick={() => setIsAddFacultyModalVisible(false)} style={{ padding: '10px 24px', backgroundColor: '#fef2f2', color: '#ef4444', border: '1px solid #f87171', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
                             <button type="submit" disabled={loading} style={{ padding: '10px 24px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Create Faculty</button>
                           </div>
                         </form>
@@ -1364,14 +1654,34 @@ const AdminDashboard = () => {
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Phone Number</label>
                             <div style={{ display: 'flex', alignItems: 'stretch' }}>
                               <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
-                              <input type="text" placeholder="Enter student phone number" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({phoneNumber: e.target.value})} />
+                              <input type="text" placeholder="Enter student phone number" required style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => {
+                                let val = e.target.value.replace(/\D/g, '');
+                                if (val.length > 10) val = val.slice(0, 10);
+                                e.target.value = val;
+                                studentForm.setFieldsValue({phoneNumber: val});
+                                if (!/^[6-9]\d{9}$/.test(val)) {
+                                  e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                                } else {
+                                  e.target.setCustomValidity('');
+                                }
+                              }} />
                             </div>
                           </div>
                           <div>
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
                             <div style={{ display: 'flex', alignItems: 'stretch' }}>
                               <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
-                              <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({parentPhone: e.target.value})} />
+                              <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => {
+                                let val = e.target.value.replace(/\D/g, '');
+                                if (val.length > 10) val = val.slice(0, 10);
+                                e.target.value = val;
+                                studentForm.setFieldsValue({parentPhone: val});
+                                if (val && !/^[6-9]\d{9}$/.test(val)) {
+                                  e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                                } else {
+                                  e.target.setCustomValidity('');
+                                }
+                              }} />
                             </div>
                           </div>
                           <div>
@@ -1383,7 +1693,14 @@ const AdminDashboard = () => {
                           </div>
                           <div>
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Email</label>
-                            <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => studentForm.setFieldsValue({email: e.target.value})} />
+                            <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                              studentForm.setFieldsValue({email: e.target.value});
+                              if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                                e.target.setCustomValidity('Please enter a valid Email address');
+                              } else {
+                                e.target.setCustomValidity('');
+                              }
+                            }} />
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
                             <button type="button" onClick={() => setIsAddStudentModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
@@ -1489,17 +1806,21 @@ const AdminDashboard = () => {
                         >Drop-Outs</div>
                       </div>
                       <div className="uxer-actions">
-                        <button className="uxer-action-btn" onClick={() => setStudentTextSearch('')}>
-                          <Filter className="w-4 h-4" style={{ marginRight: '6px' }} /> Filter <ChevronDown className="w-4 h-4" style={{ marginLeft: '4px' }} />
-                        </button>
-                        <button className="uxer-action-btn">
-                          <ArrowDownUp className="w-4 h-4" style={{ marginRight: '6px' }} /> Sort <ChevronDown className="w-4 h-4" style={{ marginLeft: '4px' }} />
-                        </button>
-                        <button
+                        <select
                           className="uxer-action-btn"
-                          onClick={() => { setGlobalSearchAction('delete'); setGlobalSearchModalVisible(true); }}
+                          value={studentCourseFilter}
+                          onChange={(e) => setStudentCourseFilter(e.target.value)}
+                          style={{ background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer', appearance: 'none' }}
                         >
-                          <Trash2 className="w-4 h-4" style={{ marginRight: '6px' }} /> Bulk Delete
+                          <option value="All">All Courses</option>
+                          {courseList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        </select>
+                        <button 
+                          className="uxer-action-btn"
+                          onClick={() => setStudentSortOrder(prev => prev === 'A-Z' ? '' : 'A-Z')}
+                        >
+                          <TrendingUp className="w-4 h-4" style={{ marginRight: '6px' }} /> 
+                          {studentSortOrder === 'A-Z' ? 'Sort: A-Z' : 'Sort'}
                         </button>
                       </div>
                     </div>
@@ -1511,17 +1832,19 @@ const AdminDashboard = () => {
                       else if (studentManagementTab === 'inactive') list = list.filter(s => s.currentStatus === 'Inactive');
                       else if (studentManagementTab === 'dropout') list = list.filter(s => s.currentStatus === 'Drop-out');
                       const filtered = filteredStudentList(list);
+                      if (studentSortOrder === 'A-Z') {
+                        filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                      }
                       const totalRecords = filtered.length;
-                      const totalPages = Math.ceil(totalRecords / 10);
-                      const startIndex = (studentCurrentPage - 1) * 10;
-                      const currentRecords = filtered.slice(startIndex, startIndex + 10);
+                      const totalPages = Math.ceil(totalRecords / 20);
+                      const startIndex = (studentCurrentPage - 1) * 20;
+                      const currentRecords = filtered.slice(startIndex, startIndex + 20);
                       
                       return (
                         <div className="uxer-table-card">
                           <table className="uxer-table">
                             <thead>
                               <tr>
-                                <th style={{ width: '40px' }}><input type="checkbox" className="uxer-checkbox" /></th>
                                 <th>Student</th>
                                 <th>Course</th>
                                 <th>Batch</th>
@@ -1541,7 +1864,6 @@ const AdminDashboard = () => {
                                   const statusLabel = status === 'Drop-out' ? 'Drop-Out' : status;
                                   return (
                                     <tr key={s.id || i}>
-                                      <td><input type="checkbox" className="uxer-checkbox" /></td>
                                       <td>
                                         <div className="uxer-student-cell">
                                           <div className="uxer-avatar">{initials}</div>
@@ -1553,12 +1875,22 @@ const AdminDashboard = () => {
                                       <td>{s.phoneNumber || s.parentPhone || '-'}</td>
                                       <td><span className={`uxer-status-pill ${statusClass}`}>{statusLabel}</span></td>
                                       <td>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '16px' }}>
                                           <button
                                             onClick={() => { setEditingUser(s); editForm.setFieldsValue(s); setIsEditModalVisible(true); }}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '18px', letterSpacing: '2px' }}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
                                             title="Edit"
-                                          >...</button>
+                                          ><Pencil size={18} /></button>
+                                          <Popconfirm title="Are you sure you want to delete this student?" onConfirm={() => handleDeleteUser(s.id)} okText="Yes" cancelText="No">
+                                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }} title="Delete">
+                                              <Trash2 size={18} />
+                                            </button>
+                                          </Popconfirm>
+                                          <button
+                                            onClick={() => { setSelectedJourneyStudent(s); setIsJourneyProfileModalVisible(true); }}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6' }}
+                                            title="View History"
+                                          ><Eye size={18} /></button>
                                         </div>
                                       </td>
                                     </tr>
@@ -1567,16 +1899,12 @@ const AdminDashboard = () => {
                               )}
                             </tbody>
                           </table>
-                          {/* Pagination */}
-                          {totalRecords > 10 && (
-                            <div className="uxer-pagination">
-                              <button className="uxer-page-btn" disabled={studentCurrentPage === 1} onClick={() => setStudentCurrentPage(Math.max(1, studentCurrentPage - 1))}>&lt;</button>
-                              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                                <button key={page} className={`uxer-page-btn ${studentCurrentPage === page ? 'active' : ''}`} onClick={() => setStudentCurrentPage(page)}>{page}</button>
-                              ))}
-                              <button className="uxer-page-btn" disabled={studentCurrentPage === totalPages} onClick={() => setStudentCurrentPage(Math.min(totalPages, studentCurrentPage + 1))}>&gt;</button>
-                            </div>
-                          )}
+                          <CustomPagination 
+                            currentPage={studentCurrentPage} 
+                            totalItems={totalRecords} 
+                            itemsPerPage={20} 
+                            onPageChange={setStudentCurrentPage} 
+                          />
                         </div>
                       );
                     })()}
@@ -1648,7 +1976,7 @@ const AdminDashboard = () => {
                                 );
                               })}
                             </Select.OptGroup>
-                            <Select.OptGroup label={<span className="font-bold text-slate-800">SUBJECTS / MODULES</span>}>
+                            <Select.OptGroup label={<span className="font-bold text-slate-800">MODULES</span>}>
                               {Array.from(new Set(
                                 courseList.flatMap(course => 
                                   (course.modules || "").split(/[\n,]+/).map(m => m.trim()).filter(m => m)
@@ -1751,7 +2079,19 @@ const AdminDashboard = () => {
                   <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
                     <h3 className="text-lg font-semibold mb-4 text-slate-800">Assigned Courses Roster</h3>
                     <div className="w-full overflow-x-auto">
-                      <Table dataSource={assignmentList} columns={assignmentColumns} rowKey="id" pagination={{ pageSize: 5 }} scroll={{ x: 'max-content' }} />
+                      <Table 
+                        dataSource={assignmentList.slice((courseCurrentPage - 1) * 20, courseCurrentPage * 20)} 
+                        columns={assignmentColumns} 
+                        rowKey="id" 
+                        pagination={false} 
+                        scroll={{ x: 'max-content' }} 
+                      />
+                      <CustomPagination 
+                        currentPage={courseCurrentPage} 
+                        totalItems={assignmentList.length} 
+                        itemsPerPage={20} 
+                        onPageChange={setCourseCurrentPage} 
+                      />
                     </div>
                   </div>
                 </div>
@@ -1772,18 +2112,25 @@ const AdminDashboard = () => {
                       label: <span className="font-bold text-slate-700">{(course.name || "").replace(" (Full Course)", "")}</span>,
                       className: "course-panel",
                       extra: (
-                        <Popconfirm title="Delete this entire course?" onConfirm={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }} okText="Yes" cancelText="No">
-                          <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} onClick={e => e.stopPropagation()} />
-                        </Popconfirm>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                          <Button type="text" size="small" icon={<Plus className="w-4 h-4 text-blue-600" />} onClick={(e) => { e.stopPropagation(); setCourseToEdit(course); setIsAddSubjectModalVisible(true); }} title="Add Module" />
+                          <Button type="text" size="small" icon={<Pencil className="w-4 h-4 text-emerald-600" />} onClick={(e) => { e.stopPropagation(); setCourseToEdit(course); setNewCourseName(course.name); setIsEditCourseModalVisible(true); }} title="Edit Course Name" />
+                          <Popconfirm title="Delete this entire course?" onConfirm={(e) => { e.stopPropagation(); handleDeleteCourse(course.id); }} okText="Yes" cancelText="No">
+                            <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} />
+                          </Popconfirm>
+                        </div>
                       ),
                       children: course.modules ? (
                         <div className="flex flex-col gap-2">
                           {course.modules.split(/[\n,]+/).map(m => m.trim()).filter(m => m).map(module => (
                             <div key={`${course.id}-${module}`} className="module-row flex justify-between items-center p-3 bg-white border border-slate-200 rounded-md shadow-sm">
                               <span className="text-slate-600 font-medium">{module}</span>
-                              <Popconfirm title="Remove this module from the course?" onConfirm={() => handleDeleteCourseModule(course.id, module, course.modules)} okText="Yes" cancelText="No">
-                                <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} />
-                              </Popconfirm>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <Button type="text" size="small" icon={<Pencil className="w-4 h-4 text-emerald-600" />} onClick={() => { setCourseToEdit(course); setSubjectToEdit(module); setNewSubjectName(module); setIsEditSubjectModalVisible(true); }} title="Edit Module Name" />
+                                <Popconfirm title="Remove this module from the course?" onConfirm={() => handleDeleteCourseModule(course.id, module, course.modules)} okText="Yes" cancelText="No">
+                                  <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} />
+                                </Popconfirm>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1952,7 +2299,7 @@ const AdminDashboard = () => {
                       <div className="uxer-stat-title">Cumulative Fees Collected</div>
                       <div className="uxer-stat-content">
                         <div className="uxer-stat-value">
-                          ₹{studentList.reduce((sum, s) => sum + (s.paidFee || 0), 0).toLocaleString()}
+                          ₹{billHistory.reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0).toLocaleString()}
                         </div>
                       </div>
                     </div>
@@ -1960,7 +2307,12 @@ const AdminDashboard = () => {
                       <div className="uxer-stat-title">Total Overdue Pending</div>
                       <div className="uxer-stat-content">
                         <div className="uxer-stat-value" style={{ color: 'var(--red-600, #dc2626)' }}>
-                          ₹{studentList.reduce((sum, s) => { const pending = (s.courseFee || 28000) - (s.paidFee || 0); return sum + (pending > 0 ? pending : 0); }, 0).toLocaleString()}
+                          ₹{studentList.reduce((sum, s) => { 
+                            const courseFee = s.courseFee || 28000;
+                            const studentTotalPaid = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo)).reduce((sSum, t) => sSum + (Number(t.totalAmount) || 0), 0);
+                            const pending = courseFee - studentTotalPaid;
+                            return sum + (pending > 0 ? pending : 0); 
+                          }, 0).toLocaleString()}
                         </div>
                       </div>
                     </div>
@@ -1973,7 +2325,13 @@ const AdminDashboard = () => {
                         className={`uxer-tab ${billingTab === 'ledger' ? 'active' : ''}`}
                         onClick={() => setBillingTab('ledger')}
                       >
-                        Comprehensive Ledger
+                        Single Entry Ledger
+                      </div>
+                      <div 
+                        className={`uxer-tab ${billingTab === 'history' ? 'active' : ''}`}
+                        onClick={() => setBillingTab('history')}
+                      >
+                        Bill History
                       </div>
                       <div 
                         className={`uxer-tab ${billingTab === 'due_list' ? 'active' : ''}`}
@@ -1984,143 +2342,274 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Tab 1: Comprehensive Ledger */}
+                  {/* Tab 1: Single Entry Ledger */}
                   {billingTab === 'ledger' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                      <div className="uxer-actions" style={{ justifyContent: 'flex-end' }}>
-                        <button onClick={downloadTodaysCollectionCSV} className="uxer-action-btn">
-                          <Download className="w-4 h-4" style={{ marginRight: '6px' }} /> Download Today's Collection
-                        </button>
-                        <button onClick={downloadStudentLedgerCSV} className="uxer-action-btn">
-                          <Download className="w-4 h-4" style={{ marginRight: '6px' }} /> Track Ledger
+                    <div className="uxer-table-card" style={{ padding: '24px', backgroundColor: 'var(--uxer-card)' }}>
+                      <h3 style={{ margin: '0 0 24px 0', fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>New Ledger Entry</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Date</label>
+                          <input type="date" value={billingEntry.date} onChange={(e) => handleBillingEntryChange('date', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Bill Code</label>
+                          <input type="text" value={billingEntry.billCode} onChange={(e) => handleBillingEntryChange('billCode', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)', fontWeight: 'bold' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Enrollment No</label>
+                          <input type="text" value={billingEntry.enrollmentNo} onChange={(e) => handleBillingEntryChange('enrollmentNo', e.target.value)} placeholder="Enter enrollment no" style={{ width: '100%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Student Info</label>
+                          <div style={{ padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)' }}>
+                            <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{billingEntry.studentName || 'N/A'}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{billingEntry.course || 'N/A'} (Fees: ₹{billingEntry.totalFees})</div>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Payment Amount</label>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input type="number" value={billingEntry.amountPaid} readOnly={billingEntry.mode === 'Split'} onChange={(e) => handleBillingEntryChange('amountPaid', e.target.value)} placeholder="Amount" style={{ width: '60%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: billingEntry.mode === 'Split' ? 'var(--bg-hover)' : 'var(--card-bg)', color: 'var(--text-main)', fontWeight: 'bold' }} />
+                              <select value={billingEntry.mode} onChange={(e) => handleBillingEntryChange('mode', e.target.value)} className="uxer-form-select" style={{ width: '40%', padding: '10px', margin: 0 }}>
+                                <option value="Cash">Cash</option>
+                                <option value="GPay">GPay</option>
+                                <option value="Card">Card</option>
+                                <option value="Split">Split</option>
+                              </select>
+                            </div>
+                            {billingEntry.mode === 'Split' && (
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <input type="number" value={billingEntry.cashAmount} onChange={(e) => handleBillingEntryChange('cashAmount', e.target.value)} placeholder="Cash Amount" style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                                <input type="number" value={billingEntry.upiAmount} onChange={(e) => handleBillingEntryChange('upiAmount', e.target.value)} placeholder="GPay Amount" style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Due Date (Optional)</label>
+                          <input type="date" value={billingEntry.dueDate} onChange={(e) => handleBillingEntryChange('dueDate', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Payer & Cashier</label>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input type="text" placeholder="Payer" value={billingEntry.payer} onChange={(e) => handleBillingEntryChange('payer', e.target.value)} style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                            <input type="text" placeholder="Cashier" value={billingEntry.cashier} onChange={(e) => handleBillingEntryChange('cashier', e.target.value)} style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Balance Summary</label>
+                          <div style={{ padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>₹{billingEntry.balance}</span>
+                            <span style={{ backgroundColor: billingEntry.status === 'Paid' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 179, 8, 0.1)', color: billingEntry.status === 'Paid' ? 'var(--green-600, #16a34a)' : 'var(--yellow-600, #ca8a04)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>{billingEntry.status}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                        <button onClick={handleSaveBillingEntry} style={{ padding: '12px 24px', backgroundColor: 'var(--blue-600)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <CheckCircle size={18} /> Save Transaction
                         </button>
                       </div>
+                    </div>
+                  )}
 
-                      {/* Month-Wise Grids */}
+                  {/* Tab: Bill History */}
+                  {billingTab === 'history' && (
+                    <div className="uxer-table-card" style={{ padding: '24px', backgroundColor: 'var(--uxer-card)' }}>
+                      <h3 style={{ margin: '0 0 24px 0', fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>Bill Collection History</h3>
                       {(() => {
-                        const groupedRows = billingRows.reduce((acc, row) => {
-                          if (!acc[row.billMonth]) acc[row.billMonth] = [];
-                          acc[row.billMonth].push(row);
+                        const filteredBillHistory = billHistory.filter(row => {
+                          if (!billingSearchQuery) return true;
+                          const q = billingSearchQuery.trim().toLowerCase();
+                          const student = studentList.find(s => s.id === row.studentId);
+                          const studentName = (student ? student.name : 'Unknown').toLowerCase();
+                          const enrollmentNo = (student ? (student.enrollmentNo || student.enrollmentNumber || '') : '').toString().toLowerCase();
+                          const billNum = (row.billNumber || '').toString().toLowerCase();
+                          
+                          return studentName.includes(q) || enrollmentNo.includes(q) || billNum.includes(q);
+                        });
+
+                        const groupedHistory = filteredBillHistory.reduce((acc, row) => {
+                          const dateObj = new Date(row.paymentDate || row.timestamp?.seconds * 1000 || Date.now());
+                          const monthStr = dateObj.toLocaleString('default', { month: 'long', year: 'numeric' });
+                          if (!acc[monthStr]) acc[monthStr] = [];
+                          acc[monthStr].push(row);
                           return acc;
                         }, {});
-                        
-                        return Object.entries(groupedRows).map(([month, rows]) => {
-                          const totalCollected = rows.reduce((sum, r) => sum + (Number(r.amountPaid) || 0), 0);
-                          const totalOutstanding = rows.reduce((sum, r) => sum + (Number(r.balance) || 0), 0);
 
-                          return (
-                            <div key={month} className="uxer-table-card">
-                              <div style={{ padding: '16px 24px', backgroundColor: 'var(--uxer-card)', borderBottom: '1px solid var(--uxer-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>{month} Ledger</h3>
-                                <div style={{ display: 'flex', gap: '16px' }}>
-                                  <div style={{ padding: '8px 16px', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--green-600, #16a34a)', borderRadius: '8px', fontWeight: 'bold' }}>
-                                    ₹{totalCollected.toLocaleString()} Collected
+                        if (Object.keys(groupedHistory).length === 0) {
+                          return <div style={{ color: 'var(--text-secondary)' }}>No bill history available.</div>;
+                        }
+
+                        const handleExportMonthlyCSV = (month, rows) => {
+                          const headers = ["Date", "Bill Number", "Student Name", "Course", "Amount Paid (INR)", "Payment Mode"];
+                          const csvRows = [headers.join(",")];
+                          let totalCollection = 0;
+
+                          rows.forEach(row => {
+                            const student = studentList.find(s => s.id === row.studentId);
+                            const dateStr = new Date(row.paymentDate || row.timestamp?.seconds * 1000).toLocaleDateString();
+                            const studentName = student ? student.name : 'Unknown';
+                            const course = row.course || '';
+                            const amount = row.totalAmount || 0;
+                            const mode = row.paymentMode === 'Split' ? `Split (Cash: ${row.cashAmount || 0} | GPay: ${row.gpayAmount || 0})` : (row.paymentMode || 'Cash');
+                            
+                            totalCollection += Number(amount);
+                            
+                            csvRows.push(`"${dateStr}","${row.billNumber}","${studentName}","${course}","${amount}","${mode}"`);
+                          });
+
+                          csvRows.push(`,,,,"Total Collection","${totalCollection}"`);
+
+                          const csvString = csvRows.join("\n");
+                          const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement("a");
+                          link.setAttribute("href", url);
+                          link.setAttribute("download", `Fee_Report_${month.replace(' ', '_')}.csv`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        };
+
+                        const handlePrintReceipt = (row) => {
+                          const student = studentList.find(s => s.id === row.studentId);
+                          const studentName = student ? student.name : 'Unknown';
+                          const dateStr = new Date(row.paymentDate || row.timestamp?.seconds * 1000).toLocaleDateString();
+                          const mode = row.paymentMode === 'Split' ? `Split (Cash: ${row.cashAmount || 0} | GPay: ${row.gpayAmount || 0})` : (row.paymentMode || 'Cash');
+                          
+                          const printWindow = window.open('', '_blank', 'width=800,height=600');
+                          printWindow.document.write(`
+                            <html>
+                              <head>
+                                <title>Fee Receipt - ${row.billNumber}</title>
+                                <style>
+                                  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; }
+                                  .receipt-box { border: 1px solid #ddd; padding: 30px; border-radius: 8px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+                                  .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+                                  .header h1 { margin: 0; color: #2563eb; }
+                                  .header p { margin: 5px 0 0 0; color: #64748b; }
+                                  .row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 14px; }
+                                  .label { font-weight: bold; color: #64748b; }
+                                  .value { font-weight: 500; }
+                                  .total-box { margin-top: 30px; padding-top: 20px; border-top: 2px dashed #ddd; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; color: #0f172a; }
+                                  .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #94a3b8; }
+                                </style>
+                              </head>
+                              <body>
+                                <div class="receipt-box">
+                                  <div class="header">
+                                    <h1>${user?.organizationName || 'Organization'}</h1>
+                                    <p>Fee Payment Receipt</p>
                                   </div>
-                                  <div style={{ padding: '8px 16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--red-600, #dc2626)', borderRadius: '8px', fontWeight: 'bold' }}>
-                                    ₹{totalOutstanding.toLocaleString()} Due
+                                  <div class="row">
+                                    <span class="label">Receipt Number:</span>
+                                    <span class="value">${row.billNumber}</span>
+                                  </div>
+                                  <div class="row">
+                                    <span class="label">Date:</span>
+                                    <span class="value">${dateStr}</span>
+                                  </div>
+                                  <div class="row">
+                                    <span class="label">Student Name:</span>
+                                    <span class="value">${studentName}</span>
+                                  </div>
+                                  <div class="row">
+                                    <span class="label">Course:</span>
+                                    <span class="value">${row.course || 'N/A'}</span>
+                                  </div>
+                                  <div class="row">
+                                    <span class="label">Payment Mode:</span>
+                                    <span class="value">${mode}</span>
+                                  </div>
+                                  <div class="total-box">
+                                    <span>Total Amount Paid:</span>
+                                    <span>₹${row.totalAmount}</span>
+                                  </div>
+                                  <div class="footer">
+                                    This is a computer-generated receipt.
                                   </div>
                                 </div>
-                              </div>
-                              <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left', tableLayout: 'fixed' }}>
-                                  <thead style={{ borderBottom: '2px solid var(--border-color)' }}>
-                                    <tr>
-                                      <th style={{ width: '120px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Date</th>
-                                      <th style={{ width: '110px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Bill Code</th>
-                                      <th style={{ width: '110px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Enrollment No</th>
-                                      <th style={{ width: '140px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Student Name</th>
-                                      <th style={{ width: '100px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Total Fees</th>
-                                      <th style={{ width: '180px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Payment Details</th>
-                                      <th style={{ width: '120px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Due Date</th>
-                                      <th style={{ width: '130px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Payer & Cashier</th>
-                                      <th style={{ width: '100px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Balance</th>
-                                      <th style={{ width: '90px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
-                                      <th style={{ width: '100px', padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', textAlign: 'center' }}>Action</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {rows.map(row => (
-                                      <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', verticalAlign: 'top' }}>
-                                        <td style={{ padding: '12px 8px' }}>
-                                          <input type="date" value={row.date} onChange={(e) => handleBillingRowChange(row.id, 'date', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
-                                          <div style={{ marginTop: '4px' }}>
-                                            <input type="text" placeholder="Bill Month" value={row.billMonth} onChange={(e) => handleBillingRowChange(row.id, 'billMonth', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
-                                          </div>
-                                        </td>
-                                        <td style={{ padding: '12px 8px' }}>
-                                          <input type="text" placeholder="Bill Code" value={row.billCode} onChange={(e) => handleBillingRowChange(row.id, 'billCode', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px', fontWeight: 'bold' }} />
-                                        </td>
-                                        <td style={{ padding: '12px 8px' }}>
-                                          <input type="text" placeholder="Enroll No" value={row.enrollmentNo} onChange={(e) => handleBillingRowChange(row.id, 'enrollmentNo', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
-                                        </td>
-                                        <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontSize: '12px', fontWeight: 'bold' }}>
-                                          {row.studentName || <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontWeight: 'normal' }}>Auto-fill</span>}
-                                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', fontWeight: 'normal' }}>{row.course || 'N/A'}</div>
-                                        </td>
-                                        <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontSize: '13px', fontWeight: 'bold' }}>₹{row.totalFees}</td>
-                                        <td style={{ padding: '12px 8px' }}>
-                                          <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', alignItems: 'center' }}>
-                                            <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                              <input type="checkbox" checked={row.splitMode} onChange={(e) => handleBillingRowChange(row.id, 'splitMode', e.target.checked)} style={{ marginRight: '4px' }}/>
-                                              Split Payment
-                                            </label>
-                                          </div>
-                                          {!row.splitMode ? (
-                                            <div style={{ display: 'flex', gap: '4px' }}>
-                                              <input type="number" placeholder="Amt" value={row.amountPaid} onChange={(e) => handleBillingRowChange(row.id, 'amountPaid', e.target.value)} style={{ width: '60%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px', fontWeight: 'bold' }} />
-                                              <select value={row.mode || 'Cash'} onChange={(e) => handleBillingRowChange(row.id, 'mode', e.target.value)} style={{ width: '40%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', fontSize: '12px' }}>
-                                                <option value="Cash">Cash</option>
-                                                <option value="GPay">GPay</option>
-                                                <option value="Card">Card</option>
-                                              </select>
-                                            </div>
-                                          ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                              <input type="number" placeholder="Cash ₹" value={row.cashAmount} onChange={(e) => handleBillingRowChange(row.id, 'cashAmount', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px' }} />
-                                              <input type="number" placeholder="GPay ₹" value={row.upiAmount} onChange={(e) => handleBillingRowChange(row.id, 'upiAmount', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px' }} />
-                                              <input type="number" placeholder="Card ₹" value={row.cardAmount} onChange={(e) => handleBillingRowChange(row.id, 'cardAmount', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px' }} />
-                                            </div>
-                                          )}
-                                        </td>
-                                        <td style={{ padding: '12px 8px' }}>
-                                          <input type="date" value={row.dueDate} onChange={(e) => handleBillingRowChange(row.id, 'dueDate', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '12px' }} />
-                                        </td>
-                                        <td style={{ padding: '12px 8px' }}>
-                                          <input type="text" placeholder="Payer Name" value={row.payer} onChange={(e) => handleBillingRowChange(row.id, 'payer', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '11px', marginBottom: '4px' }} />
-                                          <input type="text" placeholder="Cashier" value={row.cashier} onChange={(e) => handleBillingRowChange(row.id, 'cashier', e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border-color)', borderRadius: '4px', outline: 'none', color: 'var(--text-main)', fontSize: '11px' }} />
-                                        </td>
-                                        <td style={{ padding: '8px 8px', color: 'var(--text-main)', fontSize: '13px', fontWeight: 'bold' }}>₹{row.balance}</td>
-                                        <td style={{ padding: '8px 8px' }}>
-                                          {row.status === 'Paid' ? (
-                                            <span style={{ display: 'inline-block', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--green-600, #16a34a)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>Paid</span>
-                                          ) : (
-                                            <span style={{ display: 'inline-block', backgroundColor: 'rgba(234, 179, 8, 0.1)', color: 'var(--yellow-600, #ca8a04)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>Pending</span>
-                                          )}
-                                        </td>
-                                        <td style={{ padding: '8px 8px', textAlign: 'center' }}>
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'center' }}>
-                                            <button onClick={() => handleSaveBillingRow(row)} style={{ padding: '6px 12px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: '1px solid var(--blue-200)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', width: '100%' }} title="Save Record">
-                                              Save
-                                            </button>
-                                            {row.status === 'Paid' && (
-                                              <button 
-                                                onClick={() => {
-                                                  message.success(`Digital Bill generated for ${row.billCode || 'student'}`);
-                                                }}
-                                                style={{ padding: '6px 12px', backgroundColor: 'var(--green-50)', color: 'var(--green-600)', border: '1px solid var(--green-200)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }} title="Send Bill">
-                                                <Download size={14} /> Bill
-                                              </button>
-                                            )}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          );
-                        });
+                              </body>
+                            </html>
+                          `);
+                          printWindow.document.close();
+                          printWindow.focus();
+                          setTimeout(() => {
+                            printWindow.print();
+                            printWindow.close();
+                          }, 250);
+                        };
+
+                        return (
+                          <Collapse defaultActiveKey={[Object.keys(groupedHistory)[0]]} style={{ background: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+                            {Object.entries(groupedHistory).map(([month, rows]) => {
+                              const totalCollected = rows.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0);
+                              return (
+                                <Collapse.Panel 
+                                  header={
+                                    <div style={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: '16px' }}>
+                                      <span>{month}</span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                        <span style={{ color: 'var(--green-600)' }}>₹{totalCollected.toLocaleString()}</span>
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); handleExportMonthlyCSV(month, rows); }}
+                                          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', backgroundColor: 'var(--blue-500)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                                        >
+                                          <Download size={14} /> Export CSV
+                                        </button>
+                                      </div>
+                                    </div>
+                                  }
+                                  key={month}
+                                >
+                                  <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                      <thead style={{ borderBottom: '2px solid var(--border-color)' }}>
+                                        <tr>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>Date</th>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>Bill Number</th>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>Student Name</th>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>Course</th>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>Amount Paid</th>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px' }}>Payment Mode</th>
+                                          <th style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: '12px', textAlign: 'right' }}>Actions</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {rows.map((row, idx) => {
+                                          const student = studentList.find(s => s.id === row.studentId);
+                                          const displayMode = row.paymentMode === 'Split' 
+                                            ? `Split (Cash: ₹${row.cashAmount || 0} | GPay: ₹${row.gpayAmount || 0})` 
+                                            : (row.paymentMode || 'Cash');
+                                          return (
+                                            <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                              <td style={{ padding: '12px 8px', fontSize: '13px', color: 'var(--text-main)' }}>{new Date(row.paymentDate || row.timestamp?.seconds * 1000).toLocaleDateString()}</td>
+                                              <td style={{ padding: '12px 8px', fontSize: '13px', color: 'var(--text-main)', fontWeight: 'bold' }}>{row.billNumber}</td>
+                                              <td style={{ padding: '12px 8px', fontSize: '13px', color: 'var(--text-main)' }}>{student ? student.name : 'Unknown'}</td>
+                                              <td style={{ padding: '12px 8px', fontSize: '13px', color: 'var(--text-secondary)' }}>{row.course}</td>
+                                              <td style={{ padding: '12px 8px', fontSize: '13px', color: 'var(--green-600)', fontWeight: 'bold' }}>₹{row.totalAmount}</td>
+                                              <td style={{ padding: '12px 8px', fontSize: '13px', color: 'var(--text-secondary)' }}>{displayMode}</td>
+                                              <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                                                <button onClick={() => handlePrintReceipt(row)} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', padding: '4px' }} title="Print Receipt">
+                                                  <FileText size={16} />
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </Collapse.Panel>
+                              );
+                            })}
+                          </Collapse>
+                        );
                       })()}
                     </div>
                   )}
@@ -2145,29 +2634,57 @@ const AdminDashboard = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {studentList.filter(s => ((s.courseFee || 28000) - (s.paidFee || 0)) > 0).length === 0 ? (
-                              <tr>
-                                <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>No outstanding dues across any students! 🎉</td>
-                              </tr>
-                            ) : (
-                              studentList.filter(s => ((s.courseFee || 28000) - (s.paidFee || 0)) > 0).map(s => {
+                            {(() => {
+                              const dueStudents = studentList.map(s => {
                                 const total = s.courseFee || 28000;
-                                const paid = s.paidFee || 0;
+                                const paid = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo)).reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0);
                                 const pending = total - paid;
+                                return { ...s, dynamicTotal: total, dynamicPaid: paid, dynamicPending: pending };
+                              }).filter(s => s.dynamicPending > 0);
+
+                              if (dueStudents.length === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>No outstanding dues across any students! 🎉</td>
+                                  </tr>
+                                );
+                              }
+                              
+                              const totalDue = dueStudents.length;
+                              const startIndex = (billingCurrentPage - 1) * 20;
+                              const paginatedDue = dueStudents.slice(startIndex, startIndex + 20);
+                              
+                              return paginatedDue.map(s => {
                                 return (
                                   <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                     <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>{s.enrollmentNo || s.id.substring(0, 6)}</td>
                                     <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px', fontWeight: 'bold' }}>{s.name}</td>
                                     <td style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>{s.course || 'N/A'}</td>
-                                    <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>₹{total.toLocaleString()}</td>
-                                    <td style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '14px', fontWeight: 'bold' }}>₹{paid.toLocaleString()}</td>
-                                    <td style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '14px', fontWeight: 'bold' }}>₹{pending.toLocaleString()}</td>
+                                    <td style={{ padding: '16px', color: 'var(--text-main)', fontSize: '14px' }}>₹{s.dynamicTotal.toLocaleString()}</td>
+                                    <td style={{ padding: '16px', color: 'var(--green-600, #16a34a)', fontSize: '14px', fontWeight: 'bold' }}>₹{s.dynamicPaid.toLocaleString()}</td>
+                                    <td style={{ padding: '16px', color: 'var(--red-600, #dc2626)', fontSize: '14px', fontWeight: 'bold' }}>₹{s.dynamicPending.toLocaleString()}</td>
                                   </tr>
                                 );
-                              })
-                            )}
+                              });
+                            })()}
                           </tbody>
                         </table>
+                        {(() => {
+                          const dueStudents = studentList.map(s => {
+                            const total = s.courseFee || 28000;
+                            const paid = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo)).reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0);
+                            const pending = total - paid;
+                            return { ...s, dynamicPending: pending };
+                          }).filter(s => s.dynamicPending > 0);
+                          return (
+                            <CustomPagination 
+                              currentPage={billingCurrentPage} 
+                              totalItems={dueStudents.length} 
+                              itemsPerPage={20} 
+                              onPageChange={setBillingCurrentPage} 
+                            />
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -2283,18 +2800,6 @@ const AdminDashboard = () => {
                       <div className="uxer-tab active">Student Journey Hub</div>
                     </div>
                     <div className="uxer-actions">
-                      <div className="uxer-search">
-                        <Search className="w-4 h-4" style={{ color: 'var(--uxer-text-muted)' }} />
-                        <input 
-                          type="text" 
-                          placeholder="Search by Name, ID, Mobile..." 
-                          value={journeySearchQuery}
-                          onChange={(e) => {
-                            setJourneySearchQuery(e.target.value);
-                            if (!e.target.value) setSelectedJourneyStudent(null);
-                          }}
-                        />
-                      </div>
                       <button 
                         onClick={() => {
                           const filteredJourneyStudents = studentList.filter(s => {
@@ -2458,7 +2963,10 @@ const AdminDashboard = () => {
                  {/* Attendance Telemetry Node */}
                  <div style={{ position: 'relative', marginBottom: '32px' }}>
                    <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--yellow-500, #eab308)', border: '4px solid var(--card-bg)' }}></div>
-                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Attendance Telemetry</div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                     <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Attendance Telemetry</div>
+                     <button onClick={() => setIsJourneyAttendanceModalVisible(true)} style={{ background: 'none', border: 'none', color: 'var(--blue-500, #3b82f6)', fontWeight: 'bold', cursor: 'pointer', padding: 0, fontSize: '13px' }}>View Details</button>
+                   </div>
                    <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                      {(() => {
                        let present = 0, absent = 0;
@@ -2483,28 +2991,16 @@ const AdminDashboard = () => {
                          unique.sort((a,b) => new Date(b.date) - new Date(a.date));
                        }
                        return (
-                         <>
-                           <div style={{ display: 'flex', gap: '32px', marginBottom: unique.length > 0 ? '24px' : '0' }}>
-                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold' }}>Classes Attended (Present)</span>
-                                <span style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--green-600, #16a34a)' }}>{present}</span>
-                             </div>
-                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold' }}>Classes Skipped (Absent)</span>
-                                <span style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--red-600, #dc2626)' }}>{absent}</span>
-                             </div>
+                         <div style={{ display: 'flex', gap: '32px' }}>
+                           <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold' }}>Classes Attended (Present)</span>
+                              <span style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--green-600, #16a34a)' }}>{present}</span>
                            </div>
-                           {unique.length > 0 && (
-                             <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-                               <button 
-                                 onClick={() => setIsJourneyAttendanceModalVisible(true)}
-                                 style={{ width: '100%', padding: '12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-main)' }}
-                               >
-                                 View Details
-                               </button>
-                             </div>
-                           )}
-                         </>
+                           <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '12px', textTransform: 'uppercase', fontWeight: 'bold' }}>Classes Skipped (Absent)</span>
+                              <span style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--red-600, #dc2626)' }}>{absent}</span>
+                           </div>
+                         </div>
                        );
                      })()}
                    </div>
@@ -2513,29 +3009,38 @@ const AdminDashboard = () => {
                  {/* Academic Performance Node */}
                  <div style={{ position: 'relative', marginBottom: '32px' }}>
                    <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--indigo-500, #6366f1)', border: '4px solid var(--card-bg)' }}></div>
-                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Academic Performance</div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                     <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Academic Performance (Longitudinal)</div>
+                     {selectedJourneyStudent.examHistory && selectedJourneyStudent.examHistory.length > 0 && (
+                       <button onClick={() => setIsJourneyAcademicModalVisible(true)} style={{ background: 'none', border: 'none', color: 'var(--blue-500, #3b82f6)', fontWeight: 'bold', cursor: 'pointer', padding: 0, fontSize: '13px' }}>View Details</button>
+                     )}
+                   </div>
                    <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                      {selectedJourneyStudent.examHistory && selectedJourneyStudent.examHistory.length > 0 ? (
-                       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                         <thead>
-                           <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                             <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Exam Name</th>
-                             <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Marks</th>
-                             <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Grade</th>
-                           </tr>
-                         </thead>
-                         <tbody>
-                           {selectedJourneyStudent.examHistory.map((exam, idx) => (
-                             <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                               <td style={{ padding: '12px 0', fontWeight: 'bold' }}>{exam.examName}</td>
-                               <td style={{ padding: '12px 0' }}>{exam.marks}</td>
-                               <td style={{ padding: '12px 0' }}>
-                                 <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>{exam.grade}</span>
-                               </td>
+                       <div style={{ overflowX: 'auto' }}>
+                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                           <thead>
+                             <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                               <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Semester / Year</th>
+                               <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Exam Name</th>
+                               <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Marks</th>
+                               <th style={{ padding: '8px 0', color: 'var(--text-secondary)' }}>Grade</th>
                              </tr>
-                           ))}
-                         </tbody>
-                       </table>
+                           </thead>
+                           <tbody>
+                             {selectedJourneyStudent.examHistory.map((exam, idx) => (
+                               <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                 <td style={{ padding: '12px 0' }}>{exam.semester || exam.year || 'Current'}</td>
+                                 <td style={{ padding: '12px 0', fontWeight: 'bold' }}>{exam.examName}</td>
+                                 <td style={{ padding: '12px 0' }}>{exam.marks}</td>
+                                 <td style={{ padding: '12px 0' }}>
+                                   <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>{exam.grade}</span>
+                                 </td>
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
                      ) : (
                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No academic records found.</span>
                      )}
@@ -2544,22 +3049,40 @@ const AdminDashboard = () => {
                  
                  {/* Detailed Fee Ledger Node */}
                  <div style={{ position: 'relative', marginBottom: '32px' }}>
-                   <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--teal-500, #14b8a6)', border: '4px solid var(--card-bg)' }}></div>
-                   <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Detailed Fee Ledger</div>
-                   <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                     {selectedJourneyStudent.feeHistory && selectedJourneyStudent.feeHistory.length > 0 ? (
-                       <div>
-                         <button 
-                           onClick={() => setIsJourneyFeeModalVisible(true)}
-                           style={{ width: '100%', padding: '12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-main)' }}
-                         >
-                           View Details
-                         </button>
-                       </div>
-                     ) : (
-                       <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No fee transactions recorded.</span>
-                     )}
-                   </div>
+                   {(() => {
+                     const legacyAmount = selectedJourneyStudent?.paidFee || selectedJourneyStudent?.paidAmount || 0;
+                     const studentBills = billHistory.filter(t => t.studentId === selectedJourneyStudent?.id || (t.enrollmentNo && selectedJourneyStudent?.enrollmentNo && t.enrollmentNo === selectedJourneyStudent.enrollmentNo));
+                     const trueTotalPaid = studentBills.reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0);
+                     const displayPaid = trueTotalPaid > 0 ? trueTotalPaid : legacyAmount;
+                     const hasLedgerOrLegacy = displayPaid > 0;
+                     return (
+                       <>
+                         <div style={{ position: 'absolute', left: '-33px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'var(--teal-500, #14b8a6)', border: '4px solid var(--card-bg)' }}></div>
+                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                           <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Detailed Fee Ledger</div>
+                           {hasLedgerOrLegacy && (
+                             <button onClick={() => setIsJourneyFeeModalVisible(true)} style={{ background: 'none', border: 'none', color: 'var(--blue-500, #3b82f6)', fontWeight: 'bold', cursor: 'pointer', padding: 0, fontSize: '13px' }}>View Details</button>
+                           )}
+                         </div>
+                         <div style={{ fontSize: '15px', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                           {hasLedgerOrLegacy ? (
+                             <div>
+                               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                 <span style={{ color: 'var(--text-secondary)' }}>Total Course Fee:</span>
+                                 <span style={{ fontWeight: 'bold' }}>₹{selectedJourneyStudent.courseFee || 28000}</span>
+                               </div>
+                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                 <span style={{ color: 'var(--text-secondary)' }}>Total Paid:</span>
+                                 <span style={{ fontWeight: 'bold', color: 'var(--green-600, #16a34a)' }}>₹{displayPaid}</span>
+                               </div>
+                             </div>
+                           ) : (
+                             <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>No fee transactions recorded.</span>
+                           )}
+                         </div>
+                       </>
+                     );
+                   })()}
                  </div>
                  
                  {/* Node: Course Enrollment */}
@@ -2614,7 +3137,7 @@ const AdminDashboard = () => {
             </div>
           </div>
           {/* Analytics Section */}
-          <div className="uxer-stats-grid" style={{ marginBottom: '24px' }}>
+          <div className="uxer-stats-grid" style={{ marginBottom: '24px', gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <div className="uxer-stat-card" style={{ position: 'relative' }}>
               <div className="uxer-stat-title">Today's Admissions</div>
               <div className="uxer-stat-content">
@@ -2786,7 +3309,7 @@ const AdminDashboard = () => {
                   <textarea name="remarks" className="uxer-form-textarea" rows="3" placeholder="Any special notes..."></textarea>
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
                 <button type="submit" className="uxer-action-btn" disabled={loading}>
                   {loading ? 'Processing...' : 'Complete Admission'}
                 </button>
@@ -2899,7 +3422,17 @@ const AdminDashboard = () => {
                     </thead>
                     <tbody>
                       {studentList
-                        .filter(s => (s.dateOfJoining || s.createdAt) && (admissionReportCourseFilter === 'All' || s.course === admissionReportCourseFilter))
+                        .filter(s => {
+                          if (!(s.dateOfJoining || s.createdAt)) return false;
+                          if (admissionReportCourseFilter !== 'All' && s.course !== admissionReportCourseFilter) return false;
+                          if (reportSearchQuery.trim()) {
+                            const q = reportSearchQuery.toLowerCase();
+                            const matchName = (s.name || '').toLowerCase().includes(q);
+                            const matchEnroll = (s.enrollmentNo || '').toLowerCase().includes(q);
+                            if (!matchName && !matchEnroll) return false;
+                          }
+                          return true;
+                        })
                         .sort((a,b) => {
                           const d1 = new Date(b.dateOfJoining || (b.createdAt ? b.createdAt.seconds * 1000 : 0));
                           const d2 = new Date(a.dateOfJoining || (a.createdAt ? a.createdAt.seconds * 1000 : 0));
@@ -2956,7 +3489,14 @@ const AdminDashboard = () => {
                          const paid = s.receipts?.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0) || Number(s.paidFee) || 0;
                          const isDefaulter = (courseFee - paid) > 0;
                          const matchesCourse = admissionReportCourseFilter === 'All' || s.course === admissionReportCourseFilter;
-                         return isDefaulter && matchesCourse;
+                         let matchesSearch = true;
+                         if (reportSearchQuery.trim()) {
+                           const q = reportSearchQuery.toLowerCase();
+                           const matchName = (s.name || '').toLowerCase().includes(q);
+                           const matchEnroll = (s.enrollmentNo || '').toLowerCase().includes(q);
+                           matchesSearch = matchName || matchEnroll;
+                         }
+                         return isDefaulter && matchesCourse && matchesSearch;
                       }).map(s => {
                          const courseFee = Number(s.courseFee) || 28000;
                          const paid = s.receipts?.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0) || Number(s.paidFee) || 0;
@@ -2984,7 +3524,15 @@ const AdminDashboard = () => {
                   const matchTab = attendanceReportTab === 'daily' ? record.date === todayStr : record.date !== todayStr;
                   const matchBatch = attendanceBatchFilter === 'All' ? true : record.batchName === attendanceBatchFilter;
                   const matchFaculty = attendanceFacultyFilter === 'All' ? true : record.facultyName === attendanceFacultyFilter;
-                  return matchTab && matchBatch && matchFaculty;
+                  let matchesSearch = true;
+                  if (reportSearchQuery.trim()) {
+                    const q = reportSearchQuery.toLowerCase();
+                    const matchBatchName = (record.batchName || '').toLowerCase().includes(q);
+                    const matchFacultyName = (record.facultyName || '').toLowerCase().includes(q);
+                    const matchStudent = record.records?.some(r => (r.studentName || '').toLowerCase().includes(q) || (r.enrollmentNo || '').toLowerCase().includes(q));
+                    matchesSearch = matchBatchName || matchFacultyName || matchStudent;
+                  }
+                  return matchTab && matchBatch && matchFaculty && matchesSearch;
                 });
                 
                 return (
@@ -3164,30 +3712,48 @@ const AdminDashboard = () => {
                   <thead>
                     <tr>
                       <th>Student Name</th>
-                      <th>Recent Exam</th>
-                      <th>Marks Scored</th>
-                      <th>Grade</th>
+                      <th>Enrollment No</th>
+                      <th>Course</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {studentList.filter(s => s.examHistory && s.examHistory.length > 0).map(s => {
-                      const latest = s.examHistory[s.examHistory.length - 1];
-                      return (
-                        <tr key={s.id}>
-                          <td>{s.name}</td>
-                          <td>{latest.examName}</td>
-                          <td>{latest.marks}</td>
+                    {(() => {
+                      const filteredStudents = studentList.filter(s => {
+                        if (!s.examHistory || s.examHistory.length === 0) return false;
+                        if (reportSearchQuery.trim()) {
+                          const q = reportSearchQuery.toLowerCase();
+                          const matchName = (s.name || '').toLowerCase().includes(q);
+                          const matchEnroll = (s.enrollmentNo || '').toLowerCase().includes(q);
+                          if (!matchName && !matchEnroll) return false;
+                        }
+                        return true;
+                      });
+
+                      if (filteredStudents.length === 0) {
+                        return <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No exam records found.</td></tr>;
+                      }
+
+                      return filteredStudents.map((s, i) => (
+                        <tr key={s.id || i}>
+                          <td style={{ fontWeight: '500' }}>{s.name}</td>
+                          <td>{s.enrollmentNo || s.enrollmentNumber || 'N/A'}</td>
+                          <td>{s.course || 'N/A'}</td>
                           <td>
-                            <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
-                              {latest.grade}
-                            </span>
+                            <button
+                              onClick={() => {
+                                setSelectedStudentForMarks(s);
+                                setIsMarksDetailsModalVisible(true);
+                              }}
+                              className="uxer-action-btn"
+                              style={{ padding: '6px 12px', fontSize: '13px' }}
+                            >
+                              <Eye size={16} style={{ marginRight: '6px' }} /> View
+                            </button>
                           </td>
                         </tr>
-                      );
-                    })}
-                    {studentList.filter(s => s.examHistory && s.examHistory.length > 0).length === 0 && (
-                      <tr><td colSpan="4" style={{ textAlign: 'center' }}>No exam records found.</td></tr>
-                    )}
+                      ));
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -3253,25 +3819,13 @@ const AdminDashboard = () => {
           </div>
 
           <div className="native-form-card" style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <div className="uxer-form-input" style={{ margin: 0, display: 'flex', alignItems: 'center', flex: 1, padding: '0 12px' }}>
-                <Search className="w-5 h-5 text-slate-400" style={{ flexShrink: 0 }} />
-                <input 
-                  type="text" 
-                  placeholder="Search student name or enrollment no..." 
-                  value={marksSearchText} 
-                  onChange={(e) => {
-                    setMarksSearchText(e.target.value);
-                  }}
-                  style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', marginLeft: '10px' }}
-                />
-              </div>
-              <div style={{ width: '250px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'flex-end' }}>
+              <div style={{ width: 'auto', flexShrink: 0 }}>
                 <select 
                   className="uxer-form-select" 
                   value={marksCourseFilter} 
                   onChange={(e) => setMarksCourseFilter(e.target.value)}
-                  style={{ width: '100%', margin: 0 }}
+                  style={{ margin: 0 }}
                 >
                   <option value="All">All Courses</option>
                   {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => (
@@ -3290,45 +3844,44 @@ const AdminDashboard = () => {
                     <th>Student Name</th>
                     <th>Enrollment No</th>
                     <th>Course</th>
-                    <th>Exam Name</th>
-                    <th>Marks</th>
-                    <th>Grade</th>
-                    <th>Date</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
-                    const flatMarks = studentList.filter(s => {
+                    const filteredStudents = studentList.filter(s => {
+                      if (!s.examHistory || s.examHistory.length === 0) return false;
                       if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
                       if (marksSearchText) {
                         const q = marksSearchText.toLowerCase();
                         const sName = s.name ? String(s.name).toLowerCase() : '';
                         const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
-                        if (marksSearchText.length > 0) {
-                           console.log(`Filtering student: ${s.name} - ${sEnrollment} against query: ${q}`);
-                        }
                         return (sName.includes(q) || sEnrollment.includes(q));
                       }
                       return true;
-                    }).flatMap(s => {
-                      const history = s.examHistory || [];
-                      if (history.length === 0) return [{ student: s, exam: null }];
-                      return history.map(exam => ({ student: s, exam }));
                     });
-
-                    if (flatMarks.length === 0) {
-                      return <tr><td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No students found matching your criteria.</td></tr>;
+                    
+                    if (filteredStudents.length === 0) {
+                      return <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No students found matching your criteria.</td></tr>;
                     }
 
-                    return flatMarks.map((record, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: '500' }}>{record.student.name}</td>
-                        <td>{record.student.enrollmentNo || record.student.enrollmentNumber || 'N/A'}</td>
-                        <td>{record.student.course || 'N/A'}</td>
-                        <td>{record.exam ? record.exam.examName : '-'}</td>
-                        <td style={{ fontWeight: 'bold' }}>{record.exam ? record.exam.marks : '-'}</td>
-                        <td>{record.exam ? <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{record.exam.grade}</span> : '-'}</td>
-                        <td>{record.exam && record.exam.date ? new Date(record.exam.date).toLocaleDateString() : '-'}</td>
+                    return filteredStudents.map((s, i) => (
+                      <tr key={s.id || i}>
+                        <td style={{ fontWeight: '500' }}>{s.name}</td>
+                        <td>{s.enrollmentNo || s.enrollmentNumber || 'N/A'}</td>
+                        <td>{s.course || 'N/A'}</td>
+                        <td>
+                          <button
+                            onClick={() => {
+                              setSelectedStudentForMarks(s);
+                              setIsMarksDetailsModalVisible(true);
+                            }}
+                            className="uxer-action-btn"
+                            style={{ padding: '6px 12px', fontSize: '13px' }}
+                          >
+                            <Eye size={16} style={{ marginRight: '6px' }} /> View
+                          </button>
+                        </td>
                       </tr>
                     ));
                   })()}
@@ -3430,51 +3983,74 @@ const AdminDashboard = () => {
                 <div style={{ textAlign: 'center', padding: '60px', color: '#64748b', fontSize: '16px' }}>Loading reporting data...</div>
               ) : (
                 <>
-                  {drillDownPath.length < 4 ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
-                      {drillDownData.map(item => (
-                        <div 
-                          key={item.id} 
-                          onClick={() => setDrillDownPath([...drillDownPath, item.id])}
-                          style={{ padding: '24px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.transform = 'translateY(0)'; }}
-                        >
-                          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>{item.name || item.date || item.id}</div>
-                          {item.date && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{new Date(item.date).toLocaleDateString()}</div>}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                    {drillDownPath.length < 4 && drillDownData.folders?.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
+                        {drillDownData.folders.map(item => (
+                          <div 
+                            key={item.id} 
+                            onClick={() => setDrillDownPath([...drillDownPath, item.id])}
+                            style={{ padding: '24px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                          >
+                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>{item.name || item.date || item.id}</div>
+                            {item.date && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{new Date(item.date).toLocaleDateString()}</div>}
+                            <div style={{ fontSize: '14px', color: '#3b82f6', fontWeight: 'bold', marginTop: '8px', backgroundColor: '#e0f2fe', padding: '4px 12px', borderRadius: '16px' }}>
+                              {item.count || 0} Record{item.count !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {drillDownPath.length > 0 && (
+                      <div className="uxer-table-wrapper" style={{ marginTop: (drillDownPath.length < 4 && drillDownData.folders?.length > 0) ? '16px' : '0' }}>
+                        <div style={{ marginBottom: '16px', fontSize: '16px', fontWeight: 'bold', color: '#111827' }}>
+                          Students List ({drillDownData.students?.length || 0})
                         </div>
-                      ))}
-                      {drillDownData.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#64748b', padding: '24px' }}>No records found for this period.</div>}
-                    </div>
-                  ) : (
-                    <div className="uxer-table-wrapper">
-                      <table className="uxer-table">
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>Student Name</th>
-                            <th>Enrollment No</th>
-                            <th>Course</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {drillDownData.map(s => {
-                            const dStr = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
-                            const dateObj = new Date(dStr);
-                            return (
-                              <tr key={s.id}>
-                                <td>{dateObj.toLocaleDateString()}</td>
-                                <td>{s.name}</td>
-                                <td>{s.enrollmentNo || 'N/A'}</td>
-                                <td>{s.course || 'N/A'}</td>
-                              </tr>
-                            );
-                          })}
-                          {drillDownData.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>No students found.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                        <table className="uxer-table">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Student Name</th>
+                              <th>Enrollment No</th>
+                              <th>Course</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {drillDownData.students?.map(s => {
+                              const dStr = s.dateOfJoining || (s.createdAt ? new Date(s.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+                              const dateObj = new Date(dStr);
+                              return (
+                                <tr 
+                                  key={s.id} 
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => {
+                                    setSelectedJourneyStudent(s);
+                                    setIsJourneyProfileModalVisible(true);
+                                  }}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>{dateObj.toLocaleDateString()}</td>
+                                  <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 'bold', color: '#0284c7' }}>{s.name}</td>
+                                  <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>{s.enrollmentNo || 'N/A'}</td>
+                                  <td style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>{s.course || 'N/A'}</td>
+                                </tr>
+                              );
+                            })}
+                            {(!drillDownData.students || drillDownData.students.length === 0) && (
+                              <tr><td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>No students found for this period.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {drillDownPath.length === 0 && (!drillDownData.folders || drillDownData.folders.length === 0) && (
+                      <div style={{ textAlign: 'center', color: '#64748b', padding: '24px' }}>No records found.</div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -3509,7 +4085,10 @@ const AdminDashboard = () => {
     {isEditModalVisible && (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Edit {editingUser?.role === 'staff' ? 'Faculty' : 'Student'} Profile</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Edit {editingUser?.role !== 'student' ? 'Faculty' : 'Student'} Profile</h2>
+            <button onClick={() => setIsEditModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+          </div>
           <form onSubmit={(e) => { 
             e.preventDefault(); 
             const formData = new FormData(e.target);
@@ -3517,6 +4096,7 @@ const AdminDashboard = () => {
             data.age = formData.get('age') || data.age;
             data.batch = formData.get('batch') || data.batch;
             data.experience = formData.get('experience') || data.experience;
+            data.role = formData.get('role') || data.role;
             if (formData.get('status')) data.status = formData.get('status');
             handleEditSubmit(data); 
           }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -3526,13 +4106,30 @@ const AdminDashboard = () => {
             </div>
             <div>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Email</label>
-              <input type="email" placeholder="Enter email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({email: e.target.value})} defaultValue={editForm.getFieldValue('email')} />
+              <input type="email" placeholder="Enter email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                editForm.setFieldsValue({email: e.target.value});
+                if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                  e.target.setCustomValidity('Please enter a valid Email address');
+                } else {
+                  e.target.setCustomValidity('');
+                }
+              }} defaultValue={editForm.getFieldValue('email')} />
             </div>
             <div>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Phone Number</label>
-              <input type="text" placeholder="Enter phone number" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({phoneNumber: e.target.value})} defaultValue={editForm.getFieldValue('phoneNumber')} />
+              <input type="text" placeholder="Enter phone number" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
+                let val = e.target.value.replace(/\D/g, '');
+                if (val.length > 10) val = val.slice(0, 10);
+                e.target.value = val;
+                editForm.setFieldsValue({phoneNumber: val});
+                if (!/^[6-9]\d{9}$/.test(val)) {
+                  e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                } else {
+                  e.target.setCustomValidity('');
+                }
+              }} defaultValue={editForm.getFieldValue('phoneNumber')?.replace('+91', '')} />
             </div>
-            {editingUser?.role !== 'staff' && (
+            {editingUser?.role === 'student' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
@@ -3577,7 +4174,17 @@ const AdminDashboard = () => {
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Parent Phone Number</label>
                   <div style={{ display: 'flex', alignItems: 'stretch' }}>
                     <span style={{ padding: '10px 12px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRight: 'none', borderRadius: '6px 0 0 6px', color: 'var(--text-secondary)' }}>+91 (IN)</span>
-                    <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({parentPhone: e.target.value})} defaultValue={editForm.getFieldValue('parentPhone')?.replace('+91', '')} />
+                    <input type="text" placeholder="Parent Phone" style={{ flex: 1, padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '0 6px 6px 0', boxSizing: 'border-box' }} onChange={(e) => {
+                      let val = e.target.value.replace(/\D/g, '');
+                      if (val.length > 10) val = val.slice(0, 10);
+                      e.target.value = val;
+                      editForm.setFieldsValue({parentPhone: val});
+                      if (val && !/^[6-9]\d{9}$/.test(val)) {
+                        e.target.setCustomValidity('Please enter a valid 10-digit mobile number');
+                      } else {
+                        e.target.setCustomValidity('');
+                      }
+                    }} defaultValue={editForm.getFieldValue('parentPhone')?.replace('+91', '')} />
                   </div>
                 </div>
                 <div>
@@ -3592,11 +4199,20 @@ const AdminDashboard = () => {
                 </div>
               </div>
             )}
-            {editingUser?.role === 'staff' && (
+            {editingUser?.role !== 'student' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty ID</label>
                   <input type="text" name="facultyId" placeholder="Enter Faculty/Employee ID" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({facultyId: e.target.value})} defaultValue={editForm.getFieldValue('facultyId')} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Role</label>
+                  <input type="text" name="role" list="faculty-roles-edit" placeholder="e.g. Programming Staff" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => editForm.setFieldsValue({role: e.target.value})} defaultValue={editForm.getFieldValue('role')} />
+                  <datalist id="faculty-roles-edit">
+                    {Array.from(new Set(staffList.map(s => s.role).filter(Boolean))).map(role => (
+                      <option key={role} value={role} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Age (Optional)</label>
@@ -3617,7 +4233,7 @@ const AdminDashboard = () => {
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button type="button" onClick={() => setIsEditModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: 'var(--border-color)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+              <button type="button" onClick={() => setIsEditModalVisible(false)} style={{ padding: '8px 16px', backgroundColor: '#fef2f2', color: '#ef4444', border: '1px solid #f87171', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
               <button type="submit" disabled={editLoading} style={{ padding: '8px 16px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save Changes</button>
             </div>
           </form>
@@ -3628,7 +4244,10 @@ const AdminDashboard = () => {
       {isFeeModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="custom-modal-viewport-card modal-flex-layout-group" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>Offline Fee Collection - {selectedStudentForFee?.name || ''}</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Offline Fee Collection - {selectedStudentForFee?.name || ''}</h2>
+              <button onClick={() => setIsFeeModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+            </div>
             <div style={{ textAlign: 'center', margin: '12px 0' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Enter the fee amounts received via different modes.</span>
             </div>
@@ -3731,7 +4350,10 @@ const AdminDashboard = () => {
       {isStatusModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
-            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>Update Student Status</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Update Student Status</h2>
+              <button onClick={() => setIsStatusModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+            </div>
             <form onSubmit={(e) => { e.preventDefault(); handleStatusUpdateSubmit(statusUpdateForm.getFieldsValue()); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>New Status</label>
@@ -3967,38 +4589,111 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Student Journey Fee Ledger Overlay */}
+      {/* Student Journey Fee Drill-Down Overlay */}
       {isJourneyFeeModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '700px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '800px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Detailed Fee Ledger</h2>
               <button onClick={() => setIsJourneyFeeModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
             </div>
             
             <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {(() => {
+                const legacyAmount = selectedJourneyStudent?.paidFee || selectedJourneyStudent?.paidAmount || 0;
+                const studentBills = billHistory.filter(t => t.studentId === selectedJourneyStudent?.id || (t.enrollmentNo && selectedJourneyStudent?.enrollmentNo && t.enrollmentNo === selectedJourneyStudent.enrollmentNo));
+                
+                let displayLedger = studentBills.map(bill => ({
+                  receiptId: bill.billNumber || bill.id,
+                  date: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleDateString(),
+                  time: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleTimeString(),
+                  amountPaid: bill.totalAmount,
+                  status: 'Paid'
+                }));
+                
+                if (displayLedger.length === 0 && legacyAmount > 0) {
+                  displayLedger = [{
+                    receiptId: "LEGACY-REC",
+                    date: selectedJourneyStudent.dateOfJoining || "Initial",
+                    time: "",
+                    amountPaid: legacyAmount,
+                    status: "Initial Payment"
+                  }];
+                }
+                
+                if (displayLedger.length === 0) {
+                  return <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>No fee transactions recorded</div>;
+                }
+                
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead style={{ backgroundColor: 'var(--theme-bg-premium)' }}>
+                      <tr>
+                        <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Receipt ID</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Date & Time</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Amount Paid</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayLedger.map((bill, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>{bill.receiptId || bill.billId}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)' }}>{bill.date} {bill.time || ''}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>₹{bill.amountPaid || bill.amount || 0}</td>
+                          <td style={{ padding: '16px', fontSize: '14px' }}>
+                            <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: 'rgba(22, 163, 74, 0.1)', color: 'var(--green-600, #16a34a)', fontWeight: 'bold', fontSize: '12px' }}>
+                              {bill.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Journey Academic Drill-Down Overlay */}
+      {isJourneyAcademicModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '800px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Academic Performance Details</h2>
+              <button onClick={() => setIsJourneyAcademicModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+            </div>
+            
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: 'var(--theme-bg-premium)' }}>
                   <tr>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Date</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Receipt</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Amount Paid</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Running Balance</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Semester/Year</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Exam Name</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Date Conducted</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Marks Obtained</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Percentage</th>
+                    <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Final Grade</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
-                    const sortedHistory = [...(selectedJourneyStudent?.feeHistory || [])].sort((a,b) => new Date(a.paymentDate || 0) - new Date(b.paymentDate || 0));
-                    let currentBalance = selectedJourneyStudent?.courseFee || 28000;
-                    return sortedHistory.map((fee, idx) => {
-                      const amount = fee.amountPaid || (fee.cashAmount || 0) + (fee.upiAmount || 0) + (fee.cardAmount || 0) || 0;
-                      currentBalance -= amount;
+                    const sortedHistory = [...(selectedJourneyStudent?.examHistory || [])].sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
+                    return sortedHistory.map((exam, idx) => {
+                      const maxMarks = exam.maxMarks || 100;
+                      const percentage = ((parseFloat(exam.marks) / maxMarks) * 100).toFixed(1);
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>{fee.paymentDate ? new Date(fee.paymentDate).toLocaleDateString() : 'N/A'}</td>
-                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-secondary)' }}>{fee.billNumber || 'Manual Entry'}</td>
-                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>₹{amount}</td>
-                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>₹{currentBalance}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>{exam.semester || exam.year || 'Current'}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)' }}>{exam.examName}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-secondary)' }}>{exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A'}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--indigo-600, #4f46e5)', fontWeight: 'bold' }}>{exam.marks} / {maxMarks}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)' }}>{percentage}%</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>
+                            <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>{exam.grade}</span>
+                          </td>
                         </tr>
                       );
                     });
@@ -4010,6 +4705,119 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* Add Module Modal */}
+      {isAddSubjectModalVisible && courseToEdit && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '100%', borderRadius: '16px', padding: '32px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', position: 'relative' }}>
+            <button onClick={() => { setIsAddSubjectModalVisible(false); setCourseToEdit(null); setNewSubjectName(''); }} style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+              <X className="w-6 h-6" />
+            </button>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '24px', fontWeight: 'bold' }}>Add Module</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Module Name</label>
+                <Input value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} placeholder="Enter new module name" />
+              </div>
+              <Button type="primary" onClick={handleAddSubjectToCourse} style={{ width: '100%', marginTop: '8px', height: '40px' }}>Add Module</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Course Modal */}
+      {isEditCourseModalVisible && courseToEdit && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '100%', borderRadius: '16px', padding: '32px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', position: 'relative' }}>
+            <button onClick={() => { setIsEditCourseModalVisible(false); setCourseToEdit(null); setNewCourseName(''); }} style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+              <X className="w-6 h-6" />
+            </button>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '24px', fontWeight: 'bold' }}>Edit Course</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Course Name</label>
+                <Input value={newCourseName} onChange={e => setNewCourseName(e.target.value)} placeholder="Enter course name" />
+              </div>
+              <Button type="primary" onClick={handleEditCourseName} style={{ width: '100%', marginTop: '8px', height: '40px' }}>Save Changes</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Module Modal */}
+      {isEditSubjectModalVisible && courseToEdit && subjectToEdit && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '500px', maxWidth: '100%', borderRadius: '16px', padding: '32px', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', position: 'relative' }}>
+            <button onClick={() => { setIsEditSubjectModalVisible(false); setCourseToEdit(null); setSubjectToEdit(''); setNewSubjectName(''); }} style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+              <X className="w-6 h-6" />
+            </button>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '24px', fontWeight: 'bold' }}>Edit Module</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Module Name</label>
+                <Input value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} placeholder="Enter module name" />
+              </div>
+              <Button type="primary" onClick={handleEditSubjectName} style={{ width: '100%', marginTop: '8px', height: '40px' }}>Save Changes</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Marks Details Modal */}
+      {isMarksDetailsModalVisible && selectedStudentForMarks && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '800px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative' }}>
+            <button 
+              onClick={() => {
+                setIsMarksDetailsModalVisible(false);
+                setSelectedStudentForMarks(null);
+              }}
+              style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: '20px', fontWeight: 'bold' }}>Test History: {selectedStudentForMarks.name}</h2>
+            
+            <div className="uxer-table-wrapper">
+              <table className="uxer-table">
+                <thead>
+                  <tr>
+                    <th>Exam Name</th>
+                    <th>Date Conducted</th>
+                    <th>Marks Obtained</th>
+                    <th>Grade</th>
+                    <th>Staff Role</th>
+                    <th>Uploaded By</th>
+                    <th>Subject Handled</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedStudentForMarks.examHistory && selectedStudentForMarks.examHistory.length > 0 ? (
+                    selectedStudentForMarks.examHistory.map((exam, i) => (
+                      <tr key={i}>
+                        <td>{exam.examName}</td>
+                        <td>{exam.testDate || (exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A')}</td>
+                        <td style={{ fontWeight: 'bold' }}>
+                          {exam.percentage !== undefined ? `${exam.totalObtained}/${exam.totalMax} (${exam.percentage}%)` : exam.marks}
+                        </td>
+                        <td>
+                          <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
+                            {exam.grade}
+                          </span>
+                        </td>
+                        <td><span style={{ textTransform: 'capitalize' }}>{exam.staffRole || 'N/A'}</span></td>
+                        <td>{exam.uploadedByStaffName || exam.updatedBy || 'N/A'}</td>
+                        <td>{exam.subjectHandled || 'N/A'}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr><td colSpan="7" style={{ textAlign: 'center', color: '#64748b' }}>No test history available.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
     </>

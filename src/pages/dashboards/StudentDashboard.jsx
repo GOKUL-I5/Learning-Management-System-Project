@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { logoutUser, uploadProfilePhoto, getStudentAssignments, getOrganizationCourses, subscribeToStudentAssignments, getOrganizationDetails, updateUserDoc, subscribeToFeeTransactions, updateStudentStatus, listenToOrganizationStatus, getCourseAssignments, logTransaction, subscribeToStudentSchedules } from '../../firebase/services';
+import { logoutUser, uploadProfilePhoto, getStudentAssignments, getOrganizationCourses, subscribeToStudentAssignments, getOrganizationDetails, updateUserDoc, subscribeToFeeTransactions, updateStudentStatus, listenToOrganizationStatus, getCourseAssignments, logTransaction, subscribeToStudentSchedules, subscribeToUserProfile } from '../../firebase/services';
 import { LogOut, BookOpen, User, Users, Building, Mail, Key, Calendar, Clock, ExternalLink, FileText, Download, Video, Pencil, Check, X, CreditCard, DollarSign, Receipt, FolderOpen, Upload as UploadIcon, Settings, Bell, ChevronDown, Shield, UserCircle, MonitorPlay, Moon, Search } from 'lucide-react';
 import './StudentDashboard.css';
 
@@ -25,6 +25,22 @@ const StudentDashboard = () => {
   const [feeStatusMessage, setFeeStatusMessage] = useState('');
   const [courseRoster, setCourseRoster] = useState([]);
   const [mySchedules, setMySchedules] = useState([]);
+
+  const parseFirestoreDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate().toLocaleDateString('en-IN');
+    }
+    if (timestamp.seconds) {
+      return new Date(timestamp.seconds * 1000).toLocaleDateString('en-IN');
+    }
+    const dateObj = new Date(timestamp);
+    if (!isNaN(dateObj.getTime())) {
+      return dateObj.toLocaleDateString('en-IN');
+    }
+    return 'N/A';
+  };
+
 
   const isBirthday = user?.dob && (() => {
     try {
@@ -54,6 +70,18 @@ const StudentDashboard = () => {
   const [selectedBill, setSelectedBill] = useState(null);
   const [isBillModalVisible, setIsBillModalVisible] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const profileUploadRef = React.useRef(null);
+
+  const totalCourseFee = user?.courseFee || 28000;
+  const trueTotalPaid = receipts.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0);
+  const dynamicallyPaidFee = trueTotalPaid > 0 ? trueTotalPaid : (user?.paidFee || user?.paidAmount || 0);
+  const pendingFee = Math.max(0, totalCourseFee - dynamicallyPaidFee);
+
+  const filteredSchedules = mySchedules.filter(s => s.courseName?.toLowerCase().includes(searchQuery.toLowerCase()) || s.staffName?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredContentObjects = contentObjects.filter(c => c.name?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredReceipts = receipts.filter(r => r.billNumber?.toLowerCase().includes(searchQuery.toLowerCase()) || String(r.totalAmount).includes(searchQuery));
+
   const handlePayment = async () => {
     // Razorpay checkout disabled for offline payment mode
     message.info("Online payments are currently disabled. Please contact the administration.");
@@ -62,7 +90,15 @@ const StudentDashboard = () => {
   useEffect(() => {
     let unsubscribeFees = null;
     let unsubscribeSchedules = null;
+    let unsubscribeUser = null;
+
     if (user?.id) {
+      unsubscribeUser = subscribeToUserProfile(user.id, (userData) => {
+        if (userData) {
+          setUser(userData);
+          localStorage.setItem('lms_user', JSON.stringify(userData));
+        }
+      });
       unsubscribeFees = subscribeToFeeTransactions(user.id, (data) => {
         setReceipts(data);
       });
@@ -73,6 +109,7 @@ const StudentDashboard = () => {
     const savedTheme = localStorage.getItem('app-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
     return () => {
+      if (unsubscribeUser) unsubscribeUser();
       if (unsubscribeFees) unsubscribeFees();
       if (unsubscribeSchedules) unsubscribeSchedules();
     };
@@ -195,7 +232,7 @@ const StudentDashboard = () => {
              FEE RECEIPT
 ========================================
 Receipt Number: ${receipt.billNumber}
-Date: ${receipt.timestamp ? new Date(receipt.timestamp.seconds * 1000).toLocaleString() : 'N/A'}
+Date: ${parseFirestoreDate(receipt.timestamp)}
 Organization: ${user?.organizationName || 'N/A'}
 Student Name: ${user?.name || 'N/A'}
 Enrollment No: ${user?.enrollmentNo || 'N/A'}
@@ -225,6 +262,12 @@ This is an automatically generated receipt.
 
   return (
     <div className="uxer-layout">
+      <input type="file" ref={profileUploadRef} style={{ display: 'none' }} accept="image/*" onChange={(e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleDocumentUpload(e.target.files[0], 'profilePhotoUrl');
+          e.target.value = null;
+        }
+      }} />
       {/* Sidebar Navigation */}
       <aside className="uxer-sidebar">
         <div className="uxer-sidebar-logo">
@@ -241,52 +284,54 @@ This is an automatically generated receipt.
           <div onClick={() => setActiveTab('settings')} className={`uxer-sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}><Settings style={{ width: '20px', height: '20px' }} /> Settings</div>
         </div>
 
-        <div style={{ padding: '0 8px', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#666666', fontSize: '14px', fontWeight: '500' }}>
-            <Moon style={{ width: '20px', height: '20px' }} /> Dark mode
+        {/* Sidebar Bottom Profile Widget */}
+        <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', margin: 'auto -12px -20px -12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+            {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
+              <img onClick={() => profileUploadRef.current?.click()} src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0, cursor: 'pointer' }} />
+            ) : (
+              <div onClick={() => profileUploadRef.current?.click()} style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0, cursor: 'pointer' }}>
+                {user?.name?.charAt(0).toUpperCase() || 'K'}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.name || 'Student'}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.organizationName || 'Organization'}</span>
+            </div>
           </div>
-          <div style={{ width: '36px', height: '20px', backgroundColor: '#111111', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
-            <div style={{ width: '16px', height: '16px', backgroundColor: '#FFFFFF', borderRadius: '50%', position: 'absolute', top: '2px', right: '2px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}></div>
-          </div>
+          <button onClick={logoutUser} style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s', color: 'var(--text-secondary)' }} title="Logout" onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
+            <LogOut style={{ width: '16px', height: '16px' }} />
+          </button>
         </div>
+
       </aside>
 
       {/* Main Content Area */}
       <main className="uxer-main">
         <header className="uxer-header">
           <div className="uxer-header-left">
-            <div className="org-text" style={{ textTransform: 'uppercase' }}>{user?.organizationName || 'Organization'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {logoUrl ? (
+                <img src={logoUrl} alt="Organization Logo" style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '4px' }} />
+              ) : (
+                <div style={{ width: '40px', height: '40px', borderRadius: '4px', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                  {(user?.organizationName || 'O').charAt(0)}
+                </div>
+              )}
+              <div className="org-text" style={{ textTransform: 'uppercase', margin: 0 }}>{user?.organizationName || 'Organization'}</div>
+            </div>
             <h1>Student Portal</h1>
           </div>
           <div className="uxer-header-right">
             <div className="uxer-search">
               <Search style={{ width: '16px', height: '16px', color: '#999', flexShrink: 0 }} />
-              <input type="text" placeholder="Search" />
+              <input type="text" placeholder="Search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               <div className="uxer-shortcut">&#8984; F</div>
             </div>
             
             <button style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
               <Bell style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
               <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', backgroundColor: 'var(--text-main)', borderRadius: '50%', border: '2px solid var(--card-bg)' }}></span>
-            </button>
-            <div style={{ height: '32px', width: '1px', backgroundColor: 'var(--border-color)', margin: '0 8px' }}></div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', flexShrink: 0 }}>
-              {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
-                <img src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0 }} />
-              ) : (
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-main)', fontWeight: 'bold', border: '1px solid var(--border-color)', flexShrink: 0 }}>
-                  {user?.name?.charAt(0).toUpperCase() || 'K'}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)' }}>{user?.name}</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Enrollment No. {user?.enrollmentNo || '154'}</span>
-              </div>
-            </div>
-            
-            <button onClick={logoutUser} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }} title="Logout">
-              <LogOut style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} />
             </button>
           </div>
         </header>
@@ -300,9 +345,13 @@ This is an automatically generated receipt.
               {/* Welcome Banner */}
               <div className="uxer-table-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '32px', flexWrap: 'wrap', gap: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', border: '1px solid var(--border-color)', flexShrink: 0 }}>
-                    {user?.name?.charAt(0).toUpperCase() || 'K'}
-                  </div>
+                  {user?.documents?.profilePhotoUrl || user?.photoUrl ? (
+                    <img onClick={() => profileUploadRef.current?.click()} src={user?.documents?.profilePhotoUrl || user?.photoUrl} alt="Profile" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0, cursor: 'pointer' }} />
+                  ) : (
+                    <div onClick={() => profileUploadRef.current?.click()} style={{ width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', border: '1px solid var(--border-color)', flexShrink: 0, cursor: 'pointer' }}>
+                      {user?.name?.charAt(0).toUpperCase() || 'K'}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <h2 style={{ fontSize: '28px', fontWeight: 'bold', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                       Good afternoon, {user?.name?.split(' ')[0] || 'Karthik'}! <span role="img" aria-label="wave">👋</span>
@@ -310,10 +359,10 @@ This is an automatically generated receipt.
                     <p style={{ color: 'var(--text-secondary)', margin: 0, fontWeight: '500', fontSize: '16px' }}>Here's what's happening with your academic journey today.</p>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifySelf: 'flex-end', position: 'relative', width: '120px', height: '80px' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: '8px', justifySelf: 'flex-end' }}>
                   {/* Decorative element resembling the illustration */}
-                  <BookOpen style={{ width: '64px', height: '64px', position: 'absolute', right: '-16px', bottom: '-16px', opacity: 0.2, color: 'var(--uxer-primary)' }} />
-                  <User style={{ width: '64px', height: '64px', position: 'relative', zIndex: 10, color: 'var(--text-main)' }} />
+                  <User style={{ width: '64px', height: '64px', color: 'var(--text-main)' }} />
+                  <BookOpen style={{ width: '64px', height: '64px', color: 'var(--uxer-primary)' }} />
                 </div>
               </div>
 
@@ -340,19 +389,17 @@ This is an automatically generated receipt.
                     </div>
                   </div>
 
-                  <div className="uxer-stat-card">
-                    <div className="uxer-stat-title">OUTSTANDING FEES</div>
-                    <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
-                      <div className="uxer-stat-value">₹{((user?.courseFee || 28000) - (user?.paidFee || 0)).toLocaleString()}</div>
-                      <div className="uxer-stat-badge">
-                        {((user?.courseFee || 28000) - (user?.paidFee || 0)) > 0 ? (
-                          <div className="uxer-stat-badge-pill red">1 Pending Payment</div>
-                        ) : (
-                          <div className="uxer-stat-badge-pill green">All clear</div>
-                        )}
+                  {pendingFee > 0 ? (
+                    <div className="uxer-stat-card">
+                      <div className="uxer-stat-title">OUTSTANDING FEES</div>
+                      <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+                        <div className="uxer-stat-value">₹{pendingFee.toLocaleString('en-IN')}</div>
+                        <div className="uxer-stat-badge">
+                          <div className="uxer-stat-badge-pill red">Pending Payment</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : null}
 
                   <div className="uxer-stat-card">
                     <div className="uxer-stat-title">ENROLLMENT NO.</div>
@@ -384,16 +431,18 @@ This is an automatically generated receipt.
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {((user?.courseFee || 28000) - (user?.paidFee || 0)) > 0 && (
+                      {pendingFee > 0 && (
                         <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--card-bg)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                            <div style={{ padding: '8px', backgroundColor: 'var(--bg-hover)', borderRadius: '50%', border: '1px solid var(--border-color)', flexShrink: 0 }}>
                              <DollarSign style={{ width: '20px', height: '20px', color: '#1e293b' }} />
                            </div>
                            <div style={{ flex: 1 }}>
                              <div style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '14px', marginBottom: '4px' }}>Fee Reminder</div>
-                             <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>You have an outstanding balance of ₹{((user?.courseFee || 28000) - (user?.paidFee || 0)).toLocaleString()}. Please complete your payment.</div>
+                             <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>You have an outstanding balance of ₹{pendingFee.toLocaleString('en-IN')}. Please complete your payment.</div>
                            </div>
-                           <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-secondary)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                           <div 
+                             onClick={() => alert(`Your fee due date is: ${user?.dueDate || 'Not specified'}`)}
+                             style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-secondary)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                              Due Now <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
                            </div>
                         </div>
@@ -425,9 +474,9 @@ This is an automatically generated receipt.
                       </div>
                     </div>
 
-                    {mySchedules.length > 0 ? (
+                    {filteredSchedules.length > 0 ? (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                        {mySchedules.map((schedule) => (
+                        {filteredSchedules.map((schedule) => (
                           <div key={schedule.id} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <h4 style={{ fontWeight: 'bold', color: 'var(--text-main)', margin: 0, fontSize: '16px' }}>{schedule.courseName}</h4>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
@@ -507,15 +556,15 @@ This is an automatically generated receipt.
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col justify-center text-center">
                 <div className="text-sm text-slate-500 uppercase tracking-wider font-semibold mb-1">Total Fee</div>
-                <div className="text-2xl font-bold text-slate-800">Rs. 28,000</div>
+                <div className="text-2xl font-bold text-slate-800">Rs. {totalCourseFee.toLocaleString('en-IN')}</div>
               </div>
               <div className="bg-teal-50 p-4 rounded-xl border border-teal-100 flex flex-col justify-center text-center">
                 <div className="text-sm text-teal-600 uppercase tracking-wider font-semibold mb-1">Paid Fee</div>
-                <div className="text-2xl font-bold text-teal-800">Rs. {user?.paidFee || 0}</div>
+                <div className="text-2xl font-bold text-teal-800">Rs. {dynamicallyPaidFee.toLocaleString('en-IN')}</div>
               </div>
               <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex flex-col justify-center text-center">
                 <div className="text-sm text-red-600 uppercase tracking-wider font-semibold mb-1">Pending Fee</div>
-                <div className="text-2xl font-bold text-red-800">Rs. {user?.pendingFee ?? 28000}</div>
+                <div className="text-2xl font-bold text-red-800">Rs. {pendingFee.toLocaleString('en-IN')}</div>
               </div>
             </div>
 
@@ -526,58 +575,55 @@ This is an automatically generated receipt.
                 My Digital Bills
               </h3>
               
-              {receipts.length > 0 ? (
-                <div className="flex flex-col gap-4">
-                  {receipts.map(receipt => (
-                    <div key={receipt.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
-                      <div className="flex-1 w-full">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="font-bold text-slate-800 text-lg">{receipt.billNumber}</span>
-                          <span className="text-xs font-semibold bg-green-100 text-green-700 px-2 py-1 rounded">Paid: ₹{receipt.totalAmount}</span>
-                          <span className="text-xs text-slate-500">{receipt.timestamp ? new Date(receipt.timestamp.seconds * 1000).toLocaleDateString() : 'N/A'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-sm max-w-md">
-                          <div className="bg-slate-50 p-2 rounded border border-slate-100 text-center">
-                            <div className="text-slate-500 text-xs uppercase font-bold">Cash</div>
-                            <div className="font-semibold">₹{receipt.paymentSplit?.cash || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-2 rounded border border-slate-100 text-center">
-                            <div className="text-slate-500 text-xs uppercase font-bold">UPI</div>
-                            <div className="font-semibold">₹{receipt.paymentSplit?.upi || 0}</div>
-                          </div>
-                          <div className="bg-slate-50 p-2 rounded border border-slate-100 text-center">
-                            <div className="text-slate-500 text-xs uppercase font-bold">Card</div>
-                            <div className="font-semibold">₹{receipt.paymentSplit?.card || 0}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <button 
-                          onClick={() => { setSelectedBill(receipt); setIsBillModalVisible(true); }}
-                          className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold border rounded-lg transition-colors shadow-sm"
-                          style={{ backgroundColor: 'var(--blue-50, #eff6ff)', color: 'var(--blue-600, #2563eb)', borderColor: 'var(--blue-200, #bfdbfe)' }}
-                        >
-                          <ExternalLink style={{ width: '16px', height: '16px' }} />
-                          View Digital Bill
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadReceipt(receipt)}
-                          className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold border rounded-lg transition-colors shadow-sm"
-                          style={{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', borderColor: 'var(--border-color)' }}
-                        >
-                          <Download style={{ width: '16px', height: '16px' }} />
-                          Download
-                        </button>
-                      </div>
+              {(() => {
+                const legacyAmount = user?.paidFee || user?.paidAmount || 0;
+                
+                let displayLedger = receipts.map(bill => ({
+                  receiptId: bill.billNumber || bill.id,
+                  date: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleDateString(),
+                  time: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleTimeString(),
+                  amountPaid: bill.totalAmount,
+                  status: 'Paid',
+                  description: bill.remarks || 'Fee Payment'
+                }));
+                
+                if (displayLedger.length === 0 && legacyAmount > 0) {
+                  displayLedger = [{
+                    receiptId: "LEGACY-REC",
+                    date: user?.dateOfJoining || "Initial",
+                    time: "",
+                    amountPaid: legacyAmount,
+                    status: "Initial Payment",
+                    description: "Prior payment records"
+                  }];
+                }
+                
+                if (displayLedger.length === 0) {
+                  return (
+                    <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
+                      <Receipt className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      <p className="text-lg">No fee transactions recorded.</p>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
-                  <Receipt className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <p className="text-lg">No payment history found.</p>
-                </div>
-              )}
+                  );
+                }
+
+                return (
+                  <div className="flex flex-col gap-4">
+                    {displayLedger.map((bill, idx) => (
+                      <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div className="flex-1 w-full">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-bold text-slate-800 text-lg">{bill.receiptId || bill.billId}</span>
+                            <span className="text-xs font-semibold bg-green-100 text-green-700 px-2 py-1 rounded">{bill.status}: ₹{bill.amountPaid || bill.amount}</span>
+                            <span className="text-xs text-slate-500">{bill.date} {bill.time || ''}</span>
+                          </div>
+                          <div className="text-sm text-slate-600 font-medium">{bill.description || "Fee Payment"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -654,7 +700,7 @@ This is an automatically generated receipt.
                   </div>
                 </div>
 
-                {(courseContentUrl || contentObjects.length > 0) ? (
+                {(courseContentUrl || filteredContentObjects.length > 0) ? (
                   <div className="flex flex-col gap-4">
                     {courseContentUrl && (
                       <button 
@@ -666,11 +712,11 @@ This is an automatically generated receipt.
                       </button>
                     )}
                     
-                    {contentObjects.length > 0 && (
+                    {filteredContentObjects.length > 0 && (
                       <div className="mt-4">
                         <div className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 border-b border-slate-100 pb-2">Attached Files</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {contentObjects.map((fileObj, idx) => (
+                          {filteredContentObjects.map((fileObj, idx) => (
                             <button
                               key={idx}
                               onClick={() => window.open(fileObj.url, '_blank')}

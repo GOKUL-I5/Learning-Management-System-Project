@@ -90,23 +90,38 @@ export const identifyUser = async (identifier) => {
     return user;
   }
 
-  let snapshot;
+  let docs = [];
   const usersRef = collection(db, 'users');
 
   if (identifier.includes('@')) {
-    snapshot = await getDocs(query(usersRef, where('email', '==', identifier)));
+    const snapshot = await getDocs(query(usersRef, where('email', '==', identifier)));
+    docs = snapshot.docs;
   } else {
-    // Phone lookup
-    snapshot = await getDocs(query(usersRef, where('phoneNumber', '==', identifier)));
+    // Phone lookup: check both phoneNumber and parentPhone
+    const phoneSnap = await getDocs(query(usersRef, where('phoneNumber', '==', identifier)));
+    const parentPhoneSnap = await getDocs(query(usersRef, where('parentPhone', '==', identifier)));
+    
+    const docMap = new Map();
+    phoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+    parentPhoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+    docs = Array.from(docMap.values());
   }
 
-  if (snapshot.empty) {
+  if (docs.length === 0) {
     throw new Error('Unauthorized User');
   }
 
-  const userData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-  localStorage.setItem('pending_user', JSON.stringify(userData));
-  return { ...userData, isPending: true };
+  if (docs.length > 1) {
+    const linkedProfiles = docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const payload = { isPending: true, hasMultipleSiblings: true, linkedProfiles };
+    localStorage.setItem('pending_user', JSON.stringify(payload));
+    return payload;
+  }
+
+  const userData = { id: docs[0].id, ...docs[0].data() };
+  const payload = { ...userData, isPending: true, hasMultipleSiblings: false };
+  localStorage.setItem('pending_user', JSON.stringify(payload));
+  return payload;
 };
 
 export const initiateGoogleLogin = () => {
@@ -156,13 +171,25 @@ export const handleGoogleRedirectResult = async () => {
 };
 
 // Verification functions
-export const verifyUniqueCode = async (code) => {
+export const verifyUniqueCode = async (code, enrollmentNo = null) => {
   const pendingUserStr = localStorage.getItem('pending_user');
   if (!pendingUserStr) {
     throw new Error('Session expired. Please sign in again.');
   }
 
   const pendingUser = JSON.parse(pendingUserStr);
+  let targetUser = pendingUser;
+
+  if (pendingUser.hasMultipleSiblings) {
+    if (!enrollmentNo) {
+      throw new Error('Enrollment number is required to identify the specific student.');
+    }
+    const matched = pendingUser.linkedProfiles.find(p => String(p.enrollmentNo).toLowerCase() === String(enrollmentNo).toLowerCase() || p.id === enrollmentNo);
+    if (!matched) {
+      throw new Error('Invalid Enrollment Number. Could not find a matching student profile.');
+    }
+    targetUser = matched;
+  }
 
   // Query the organizations collection to verify the Organization Access ID
   const q = query(
@@ -181,13 +208,13 @@ export const verifyUniqueCode = async (code) => {
     throw new Error('Your organization access has been suspended. Please contact SuperAdmin.');
   }
 
-  if (pendingUser.organizationAccessId && pendingUser.organizationAccessId !== code) {
+  if (targetUser.organizationAccessId && targetUser.organizationAccessId !== code) {
     throw new Error('This Access ID does not belong to your organization.');
   }
 
-  localStorage.setItem('lms_user', JSON.stringify(pendingUser));
-  localStorage.removeItem('pending_user');
-  return pendingUser;
+  localStorage.setItem('lms_user', JSON.stringify(targetUser));
+  // localStorage.removeItem('pending_user'); // Keep this to avoid race conditions with VerifyCode.jsx remounting/re-rendering
+  return targetUser;
 };
 
 export const logoutUser = () => {
@@ -364,16 +391,47 @@ export const archiveStudentToHierarchy = async (organizationId, studentId, stude
 };
 
 export const fetchAdmissionsHierarchy = async (organizationId, pathArray) => {
-  let colRef;
-  if (pathArray.length === 0) colRef = collection(db, 'organizations', organizationId, 'admissions');
-  else if (pathArray.length === 1) colRef = collection(db, 'organizations', organizationId, 'admissions', pathArray[0], 'months');
-  else if (pathArray.length === 2) colRef = collection(db, 'organizations', organizationId, 'admissions', pathArray[0], 'months', pathArray[1], 'weeks');
-  else if (pathArray.length === 3) colRef = collection(db, 'organizations', organizationId, 'admissions', pathArray[0], 'months', pathArray[1], 'weeks', pathArray[2], 'days');
-  else if (pathArray.length === 4) colRef = collection(db, 'organizations', organizationId, 'admissions', pathArray[0], 'months', pathArray[1], 'weeks', pathArray[2], 'days', pathArray[3], 'student_records');
-  else return [];
+  const usersRef = collection(db, 'users');
+  let q = query(usersRef, where('organizationId', '==', organizationId), where('role', '==', 'student'));
+  const snap = await getDocs(q);
+  let allStudents = snap.docs.map(doc => {
+    const data = doc.data();
+    if (!data.admissionYear) {
+      const dStr = data.dateOfJoining || (data.createdAt ? new Date(data.createdAt.seconds * 1000).toISOString().split('T')[0] : null);
+      if (dStr) {
+        const d = new Date(dStr);
+        data.admissionYear = String(d.getFullYear());
+        data.admissionMonth = String(d.getMonth() + 1).padStart(2, '0');
+        data.admissionWeek = `Week ${getISOWeekNumber(d)}`;
+        data.admissionDay = String(d.getDate()).padStart(2, '0');
+      }
+    }
+    return { id: doc.id, ...data };
+  });
 
-  const snap = await getDocs(colRef);
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  let students = allStudents;
+  if (pathArray.length > 0) students = students.filter(s => s.admissionYear === pathArray[0]);
+  if (pathArray.length > 1) students = students.filter(s => s.admissionMonth === pathArray[1]);
+  if (pathArray.length > 2) students = students.filter(s => s.admissionWeek === pathArray[2]);
+  if (pathArray.length > 3) students = students.filter(s => s.admissionDay === pathArray[3]);
+
+  let folders = [];
+  if (pathArray.length === 0) {
+    const years = [...new Set(students.map(s => s.admissionYear))].filter(Boolean);
+    folders = years.map(y => ({ id: y, name: y, count: students.filter(s => s.admissionYear === y).length })).sort((a, b) => b.id.localeCompare(a.id));
+  } else if (pathArray.length === 1) {
+    const months = [...new Set(students.map(s => s.admissionMonth))].filter(Boolean);
+    const monthNames = { '01': 'January', '02': 'February', '03': 'March', '04': 'April', '05': 'May', '06': 'June', '07': 'July', '08': 'August', '09': 'September', '10': 'October', '11': 'November', '12': 'December' };
+    folders = months.map(m => ({ id: m, name: monthNames[m] || m, count: students.filter(s => s.admissionMonth === m).length })).sort((a, b) => a.id.localeCompare(b.id));
+  } else if (pathArray.length === 2) {
+    const weeks = [...new Set(students.map(s => s.admissionWeek))].filter(Boolean);
+    folders = weeks.map(w => ({ id: w, name: w, count: students.filter(s => s.admissionWeek === w).length })).sort((a, b) => a.id.localeCompare(b.id));
+  } else if (pathArray.length === 3) {
+    const days = [...new Set(students.map(s => s.admissionDay))].filter(Boolean);
+    folders = days.map(d => ({ id: d, name: d, date: new Date(`${pathArray[0]}-${pathArray[1]}-${d}`).toISOString(), count: students.filter(s => s.admissionDay === d).length })).sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  return { folders, students };
 };
 
 export const migrateAllStudentsToHierarchy = async (organizationId) => {
@@ -395,6 +453,13 @@ export const createStudent = async (organizationId, organizationName, studentDat
   const existingUserSnap = await getDocs(existingUserQ);
   if (!existingUserSnap.empty) throw new Error('User with this email already exists');
 
+  const dStr = studentData.dateOfJoining || new Date().toISOString();
+  const d = new Date(dStr);
+  const year = String(d.getFullYear());
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const week = `Week ${getISOWeekNumber(d)}`;
+  const day = String(d.getDate()).padStart(2, '0');
+
   const docRef = await addDoc(collection(db, 'users'), {
     ...studentData,
     role: 'student',
@@ -402,6 +467,10 @@ export const createStudent = async (organizationId, organizationName, studentDat
     organizationName,
     photoUploadCount: 0,
     currentStatus: 'Active',
+    admissionYear: year,
+    admissionMonth: month,
+    admissionWeek: week,
+    admissionDay: day,
     statusHistory: [{
       status: 'Active',
       reason: 'Joined the organization',
@@ -417,6 +486,10 @@ export const createStudent = async (organizationId, organizationName, studentDat
     organizationName,
     photoUploadCount: 0,
     currentStatus: 'Active',
+    admissionYear: year,
+    admissionMonth: month,
+    admissionWeek: week,
+    admissionDay: day,
   };
   await archiveStudentToHierarchy(organizationId, docRef.id, finalData);
 
@@ -461,11 +534,12 @@ export const subscribeToOrganizationStudents = (organizationId, callback) => {
 export const getOrganizationStaff = async (organizationId) => {
   const q = query(
     collection(db, 'users'),
-    where('organizationId', '==', organizationId),
-    where('role', '==', 'staff')
+    where('organizationId', '==', organizationId)
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(user => user.role !== 'student' && user.role !== 'admin');
 };
 
 export const deleteUserDoc = async (userId) => {
@@ -681,6 +755,15 @@ export const subscribeToAttendanceHistoryByOrg = (organizationAccessId, callback
 };
 
 // Receipt Management Functions
+export const checkDuplicateReceipt = async (billNumber) => {
+  const q = query(
+    collection(db, 'fee_transactions'),
+    where('billNumber', '==', billNumber)
+  );
+  const snapshot = await getDocs(q);
+  return !snapshot.empty;
+};
+
 export const createReceipt = async (receiptData) => {
   const docRef = await addDoc(collection(db, 'fee_transactions'), {
     ...receiptData,
@@ -718,6 +801,25 @@ export const subscribeToFeeTransactions = (studentId, callback) => {
   });
 };
 
+export const subscribeToUserProfile = (userId, callback) => {
+  const userRef = doc(db, 'users', userId);
+  return onSnapshot(userRef, (docSnap) => {
+    if (docSnap.exists()) {
+      callback({ id: docSnap.id, ...docSnap.data() });
+    }
+  });
+};
+
+export const getAllFeeTransactions = async () => {
+  const q = collection(db, 'fee_transactions');
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+    const timeA = a.timestamp?.seconds || 0;
+    const timeB = b.timestamp?.seconds || 0;
+    return timeB - timeA;
+  });
+};
+
 // --- MARKS MANAGEMENT ---
 export const addStudentMarks = async (organizationId, studentId, examName, marks, grade, organizationAccessId) => {
   const studentRef = doc(db, 'users', studentId);
@@ -739,4 +841,114 @@ export const getStudentMarks = async (studentId) => {
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+// --- COURSE MATERIALS ---
+export const uploadCourseMaterial = async (organizationId, staffId, file, title, description, assignedStudentIds) => {
+  const storageRef = ref(storage, `materials/${organizationId}/${Date.now()}_${file.name}`);
+  await uploadBytes(storageRef, file);
+  const fileUrl = await getDownloadURL(storageRef);
+
+  const materialData = {
+    organizationId,
+    staffId,
+    title,
+    description,
+    fileName: file.name,
+    fileUrl,
+    assignedStudentIds,
+    viewedBy: [], // Array of studentIds who have viewed
+    timestamp: serverTimestamp()
+  };
+
+  const docRef = await firestoreAddDoc(collection(db, 'course_materials'), materialData);
+  return { id: docRef.id, ...materialData };
+};
+
+export const getCourseMaterialsForStaff = async (staffId) => {
+  const q = query(collection(db, 'course_materials'), where('staffId', '==', staffId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
+};
+
+export const getCourseMaterialsForStudent = async (studentId) => {
+  const q = query(collection(db, 'course_materials'), where('assignedStudentIds', 'array-contains', studentId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
+};
+
+export const markMaterialAsViewed = async (materialId, studentId) => {
+  const materialRef = doc(db, 'course_materials', materialId);
+  await firestoreUpdateDoc(materialRef, {
+    viewedBy: arrayUnion(studentId)
+  });
+};
+
+// --- ENHANCED MARKS ---
+export const addDynamicStudentMarks = async (studentId, examData) => {
+  // examData format: { testName, testDate, subjects: [{name, maxMarks, obtained}], totalMax, totalObtained, percentage, grade }
+  const studentRef = doc(db, 'users', studentId);
+  await firestoreUpdateDoc(studentRef, {
+    examHistory: arrayUnion(examData)
+  });
+};
+
+// --- CERTIFICATES ---
+export const generateCertificate = async (organizationId, studentId, certificateData) => {
+  const certData = {
+    organizationId,
+    studentId,
+    ...certificateData,
+    timestamp: serverTimestamp()
+  };
+  const docRef = await firestoreAddDoc(collection(db, 'certificates'), certData);
+  return { id: docRef.id, ...certData };
+};
+
+export const getOrganizationCertificates = async (organizationId) => {
+  const q = query(collection(db, 'certificates'), where('organizationId', '==', organizationId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
+};
+
+export const getStudentCertificates = async (studentId) => {
+  const q = query(collection(db, 'certificates'), where('studentId', '==', studentId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
+};
+
+// --- ADMIN SETTINGS ---
+export const updateAdminSettings = async (organizationId, settings) => {
+  const orgRef = doc(db, 'organizations', organizationId);
+  await firestoreUpdateDoc(orgRef, { settings });
+};
+
+// --- MANAGE FACULTY ENHANCEMENTS ---
+export const reassignFaculty = async (organizationId, oldStaffId, newStaffId) => {
+  const q = query(
+    collection(db, 'course_assignments'),
+    where('organizationId', '==', organizationId),
+    where('staffId', '==', oldStaffId)
+  );
+  const snapshot = await getDocs(q);
+  const batch = writeBatch(db);
+
+  snapshot.docs.forEach((assignmentDoc) => {
+    batch.update(doc(db, 'course_assignments', assignmentDoc.id), {
+      staffId: newStaffId
+    });
+  });
+
+  await batch.commit();
+};
+
+export const setSubstituteFaculty = async (organizationId, oldStaffId, substituteStaffId, dateStr) => {
+  const subData = {
+    organizationId,
+    originalStaffId: oldStaffId,
+    substituteStaffId,
+    date: dateStr,
+    timestamp: serverTimestamp()
+  };
+  await firestoreAddDoc(collection(db, 'faculty_substitutes'), subData);
 };

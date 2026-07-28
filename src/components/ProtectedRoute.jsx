@@ -9,16 +9,20 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   try {
     const user = JSON.parse(userStr);
+    const role = (user.role || 'staff').toLowerCase().trim();
+    const normalizedAllowedRoles = allowedRoles ? allowedRoles.map(r => (r || '').toLowerCase().trim()) : null;
     
-    if (allowedRoles && !allowedRoles.includes(user.role)) {
+    const isAllowed = normalizedAllowedRoles 
+      ? normalizedAllowedRoles.some(allowedRole => role === allowedRole || role.includes(allowedRole))
+      : true;
+    
+    if (!isAllowed) {
       // Redirect to their respective dashboard if they try to access an unauthorized route
-      switch (user.role) {
-        case 'superadmin': return <Navigate to="/superadmin" replace />;
-        case 'admin': return <Navigate to="/admin" replace />;
-        case 'staff': return <Navigate to="/staff" replace />;
-        case 'student': return <Navigate to="/student" replace />;
-        default: return <Navigate to="/login" replace />;
-      }
+      if (role === 'superadmin') return <Navigate to="/admin-dashboard" replace />;
+      if (role === 'admin') return <Navigate to="/admin" replace />;
+      if (role.includes('staff') || role.includes('faculty')) return <Navigate to="/staff" replace />;
+      if (role.includes('student')) return <Navigate to="/student" replace />;
+      return <Navigate to="/access-denied" replace />;
     }
     
     return children;

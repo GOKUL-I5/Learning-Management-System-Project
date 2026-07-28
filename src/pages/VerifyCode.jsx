@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { verifyUniqueCode } from '../firebase/services';
-import { KeyRound, ShieldCheck, Mail, LogOut } from 'lucide-react';
+import { KeyRound, ShieldCheck, Mail, LogOut, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const VerifyCode = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
+  const [hasSiblings, setHasSiblings] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -16,7 +17,7 @@ const VerifyCode = () => {
     }
     const gapiScripts = document.querySelectorAll('script[src*="apis.google.com"]');
     gapiScripts.forEach(script => script.remove());
-    
+
     // Check if there's a pending user
     const pendingUserStr = localStorage.getItem('pending_user');
     if (!pendingUserStr) {
@@ -25,20 +26,24 @@ const VerifyCode = () => {
     }
     const userData = JSON.parse(pendingUserStr);
     setEmail(userData.email || userData.phoneNumber || userData.studentPhone || userData.phone || userData.parentPhone);
+    setHasSiblings(userData.hasMultipleSiblings || false);
   }, [navigate]);
 
   const onFinish = async (values) => {
     setLoading(true);
     try {
-      const user = await verifyUniqueCode(values.accessCode);
+      const user = await verifyUniqueCode(values.accessCode, values.enrollmentNo);
       // Removed alert for zero-delay instant push
       // Redirect based on role
-      switch (user.role) {
-        case 'superadmin': navigate('/admin-dashboard', { replace: true }); break;
-        case 'admin': navigate('/admin', { replace: true }); break;
-        case 'staff': navigate('/staff', { replace: true }); break;
-        case 'student': navigate('/student', { replace: true }); break;
-        default: navigate('/staff', { replace: true }); // Fallback to a valid dashboard, never root
+      const role = (user.role || 'staff').toLowerCase().trim();
+      if (role === 'superadmin') {
+        navigate('/admin-dashboard', { replace: true });
+      } else if (role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (role.includes('student')) {
+        navigate('/student', { replace: true });
+      } else {
+        navigate('/staff', { replace: true }); // Fallback to staff dashboard for custom staff roles
       }
     } catch (error) {
       window.alert(error.message || 'Invalid Access Code. Please contact your administrator.');
@@ -55,13 +60,13 @@ const VerifyCode = () => {
   return (
     <div className="saas-v3-auth-page">
       <div className="saas-v3-auth-card">
-        
+
         <div className="saas-v3-auth-logo-container">
           <div style={{ width: '48px', height: '48px', backgroundColor: '#f1f5f9', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ShieldCheck style={{ color: '#111827', width: '24px', height: '24px' }} />
           </div>
         </div>
-        
+
         <h2 className="saas-v3-auth-title">Security Verification</h2>
         <p className="saas-v3-auth-subtitle">
           Enter your Organization Access Code to securely access your dashboard.
@@ -72,38 +77,55 @@ const VerifyCode = () => {
           <span style={{ fontSize: '13px', fontWeight: '500', color: '#475569' }}>Verifying for: {email}</span>
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); onFinish({ accessCode: e.target.accessCode.value }); }} style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+        <form onSubmit={(e) => { e.preventDefault(); onFinish({ accessCode: e.target.accessCode.value, enrollmentNo: e.target.enrollmentNo?.value }); }} style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+          {hasSiblings && (
+            <div className="saas-v3-form-group" style={{ marginBottom: '16px' }}>
+              <label className="saas-v3-form-label">Enter Your Enrollment / Register Number</label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <User style={{ position: 'absolute', left: '16px', color: '#9ca3af' }} size={18} />
+                <input
+                  type="text"
+                  name="enrollmentNo"
+                  placeholder="Enter Enrollment Number"
+                  className="saas-v3-form-input"
+                  style={{ paddingLeft: '44px' }}
+                  required
+                />
+              </div>
+            </div>
+          )}
+
           <div className="saas-v3-form-group">
             <label className="saas-v3-form-label">Access Code</label>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <KeyRound style={{ position: 'absolute', left: '16px', color: '#9ca3af' }} size={18} />
-              <input 
+              <input
                 type="password"
                 name="accessCode"
-                placeholder="Enter Access Code" 
-                className="saas-v3-form-input" 
+                placeholder="Enter Access Code"
+                className="saas-v3-form-input"
                 style={{ paddingLeft: '44px', fontFamily: 'monospace', letterSpacing: '2px' }}
                 required
               />
             </div>
           </div>
-          
-          <button 
-            type="submit" 
-            disabled={loading} 
+
+          <button
+            type="submit"
+            disabled={loading}
             className="saas-v3-btn-solid"
             style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px', marginTop: '8px' }}
           >
             {loading ? 'Verifying...' : 'Verify Identity'}
           </button>
-          
-          <button 
-            type="button" 
-            onClick={handleCancel} 
+
+          <button
+            type="button"
+            onClick={handleCancel}
             className="saas-v3-btn-outline"
-            style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '14px', marginTop: '16px' }}
+            style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: '15px', marginTop: '12px' }}
           >
-            <LogOut size={16} /> Cancel & Logout
+            <LogOut size={16} /> Cancel & Return
           </button>
         </form>
 
