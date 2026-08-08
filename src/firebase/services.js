@@ -90,25 +90,64 @@ export const identifyUser = async (identifier) => {
     return user;
   }
 
-  let docs = [];
-  const usersRef = collection(db, 'users');
+  const docMap = new Map();
 
   if (identifier.includes('@')) {
-    const snapshot = await getDocs(query(usersRef, where('email', '==', identifier)));
-    docs = snapshot.docs;
-  } else {
-    // Phone lookup: check both phoneNumber and parentPhone
-    const phoneSnap = await getDocs(query(usersRef, where('phoneNumber', '==', identifier)));
-    const parentPhoneSnap = await getDocs(query(usersRef, where('parentPhone', '==', identifier)));
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(query(usersRef, where('email', '==', identifier)));
+      snapshot.docs.forEach(doc => docMap.set(doc.id, doc));
+    } catch (error) {
+      console.warn("Failed to query users collection by email:", error);
+    }
     
-    const docMap = new Map();
-    phoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
-    parentPhoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
-    docs = Array.from(docMap.values());
+    try {
+      const studentsRef = collection(db, 'students');
+      const snapshot = await getDocs(query(studentsRef, where('email', '==', identifier)));
+      snapshot.docs.forEach(doc => docMap.set(doc.id, doc));
+    } catch (error) {
+      console.warn("Failed to query students collection by email:", error);
+    }
+  } else {
+    // Phone lookup: normalize the input
+    const cleanPhone = identifier.replace(/[\s-]/g, '');
+    const phoneVariations = [
+      cleanPhone,
+      `+91${cleanPhone.replace(/^\+?91/, '')}`,
+      `91${cleanPhone.replace(/^\+?91/, '')}`
+    ];
+    
+    try {
+      const usersRef = collection(db, 'users');
+      for (const phone of phoneVariations) {
+        const phoneSnap = await getDocs(query(usersRef, where('phoneNumber', '==', phone)));
+        const parentPhoneSnap = await getDocs(query(usersRef, where('parentPhone', '==', phone)));
+        phoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+        parentPhoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+      }
+    } catch (error) {
+      console.warn("Failed to query users collection by phone:", error);
+    }
+
+    try {
+      const studentsRef = collection(db, 'students');
+      for (const phone of phoneVariations) {
+        const phoneSnap = await getDocs(query(studentsRef, where('phoneNumber', '==', phone)));
+        const parentPhoneSnap = await getDocs(query(studentsRef, where('parentPhone', '==', phone)));
+        const studentPhoneSnap = await getDocs(query(studentsRef, where('studentPhone', '==', phone)));
+        phoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+        parentPhoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+        studentPhoneSnap.docs.forEach(doc => docMap.set(doc.id, doc));
+      }
+    } catch (error) {
+      console.warn("Failed to query students collection by phone:", error);
+    }
   }
 
+  const docs = Array.from(docMap.values());
+
   if (docs.length === 0) {
-    throw new Error('Unauthorized User');
+    throw new Error('No registered student found with this phone number.');
   }
 
   if (docs.length > 1) {
@@ -690,6 +729,18 @@ export const getStaffAssignments = async (organizationId, staffId) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const subscribeToStaffAssignments = (organizationId, staffId, callback) => {
+  const q = query(
+    collection(db, 'course_assignments'),
+    where('organizationId', '==', organizationId),
+    where('staffId', '==', staffId)
+  );
+  return onSnapshot(q, (snapshot) => {
+    const assignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(assignments);
+  });
+};
+
 export const getStudentAssignments = async (organizationId, studentId) => {
   const q = query(
     collection(db, 'course_assignments'),
@@ -723,6 +774,23 @@ export const saveAttendanceHistory = async (organizationAccessId, recordData) =>
     timestamp: serverTimestamp()
   }, { merge: true });
   return docId;
+};
+
+export const listenToAttendanceHistory = (organizationID, callback) => {
+  const q = query(
+    collection(db, 'attendance_history'),
+    where('organizationID', '==', organizationID)
+  );
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const records = [];
+    snapshot.forEach((doc) => {
+      records.push({ id: doc.id, ...doc.data() });
+    });
+    callback(records);
+  }, (error) => {
+    console.error("Error listening to attendance history: ", error);
+  });
+  return unsubscribe;
 };
 
 export const getAttendanceHistoryByFaculty = async (facultyName) => {
@@ -820,6 +888,41 @@ export const getAllFeeTransactions = async () => {
   });
 };
 
+export const updateFacultyNameWithCascade = async (facultyId, oldName, newName, organizationId) => {
+  const batch = writeBatch(db);
+
+  // 1. Update Staff Profile (Users collection)
+  const staffRef = doc(db, 'users', facultyId);
+  batch.update(staffRef, { name: newName });
+
+  // 2. Update Course Assignments
+  const assignmentsQ = query(
+    collection(db, 'course_assignments'),
+    where('facultyId', '==', facultyId),
+    where('organizationId', '==', organizationId)
+  );
+  const assignmentsSnap = await getDocs(assignmentsQ);
+  assignmentsSnap.forEach(docSnap => {
+    batch.update(docSnap.ref, { facultyName: newName });
+  });
+
+  // 3. Update Attendance History
+  const attendanceQ = query(
+    collection(db, 'attendance_history'),
+    where('facultyName', '==', oldName),
+    where('organizationID', '==', organizationId)
+  );
+  const attendanceSnap = await getDocs(attendanceQ);
+  attendanceSnap.forEach(docSnap => {
+    batch.update(docSnap.ref, { facultyName: newName });
+  });
+
+  // 4. Note: Course materials use staffId dynamically joined, and student marks removed the 'uploadedByName' dependency, 
+  // so the above queries cover the critical denormalized strings.
+  
+  await batch.commit();
+};
+
 // --- MARKS MANAGEMENT ---
 export const addStudentMarks = async (organizationId, studentId, examName, marks, grade, organizationAccessId) => {
   const studentRef = doc(db, 'users', studentId);
@@ -845,9 +948,18 @@ export const getStudentMarks = async (studentId) => {
 
 // --- COURSE MATERIALS ---
 export const uploadCourseMaterial = async (organizationId, staffId, file, title, description, assignedStudentIds) => {
-  const storageRef = ref(storage, `materials/${organizationId}/${Date.now()}_${file.name}`);
-  await uploadBytes(storageRef, file);
-  const fileUrl = await getDownloadURL(storageRef);
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'my_lms_preset');
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'rdor42ow'}/raw/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  if (!data.secure_url) throw new Error('Cloudinary upload failed: ' + (data.error?.message || 'Unknown error'));
+  const fileUrl = data.secure_url;
 
   const materialData = {
     organizationId,
@@ -877,10 +989,34 @@ export const getCourseMaterialsForStudent = async (studentId) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.timestamp - a.timestamp);
 };
 
-export const markMaterialAsViewed = async (materialId, studentId) => {
+export const subscribeToStudentCourseMaterials = (studentId, callback) => {
+  const q = query(collection(db, 'course_materials'), where('assignedStudentIds', 'array-contains', studentId));
+  return onSnapshot(q, (snapshot) => {
+    const materials = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+      const timeA = a.timestamp?.seconds || 0;
+      const timeB = b.timestamp?.seconds || 0;
+      return timeB - timeA;
+    });
+    callback(materials);
+  });
+};
+
+export const deleteCourseMaterial = async (materialId) => {
+  await deleteDoc(doc(db, 'course_materials', materialId));
+};
+
+export const updateCourseMaterial = async (materialId, updateData) => {
+  await updateDoc(doc(db, 'course_materials', materialId), updateData);
+};
+
+export const markMaterialAsViewed = async (materialId, student) => {
   const materialRef = doc(db, 'course_materials', materialId);
   await firestoreUpdateDoc(materialRef, {
-    viewedBy: arrayUnion(studentId)
+    viewedBy: arrayUnion({
+      studentId: student.id,
+      studentName: student.name,
+      viewedAt: new Date().toISOString()
+    })
   });
 };
 

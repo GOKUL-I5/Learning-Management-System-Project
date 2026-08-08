@@ -279,3 +279,82 @@
   border-left: 4px solid #10b981;
   color: #064e3b;
 }
+
+/* Real-time Fee Reminder Notification Pop-Up */
+.student-notification-popup {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 380px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-left: 4px solid #ef4444; /* Red urgent border */
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  padding: 16px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  z-index: 10000;
+  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideInUp {
+  0% { transform: translateY(100px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.student-notification-popup .popup-icon {
+  color: #ef4444;
+  background: #fef2f2;
+  padding: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.student-notification-popup .popup-content {
+  flex: 1;
+}
+
+.student-notification-popup h4 {
+  margin: 0 0 6px 0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.student-notification-popup p {
+  margin: 0 0 12px 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.student-notification-popup .popup-meta span {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.student-notification-popup .popup-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.student-notification-popup .popup-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}

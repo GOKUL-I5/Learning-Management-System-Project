@@ -78,6 +78,7 @@ const AdminDashboard = () => {
   const [facultySearchQuery, setFacultySearchQuery] = useState('');
   const [facultyRoleFilter, setFacultyRoleFilter] = useState('All');
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
+  const [courseTab, setCourseTab] = useState('active');
   const selectedStudentIds = Form.useWatch('studentIds', assignmentForm) || [];
   
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -115,6 +116,10 @@ const AdminDashboard = () => {
   const [selectedStudentForTimeline, setSelectedStudentForTimeline] = useState(null);
   const [studentManagementTab, setStudentManagementTab] = useState('active');
   
+  const [isViewAssignedStudentsModalVisible, setIsViewAssignedStudentsModalVisible] = useState(false);
+  const [assignedStudentsList, setAssignedStudentsList] = useState([]);
+  const [assignedStudentsCourseName, setAssignedStudentsCourseName] = useState('');
+  
   // Student Journey Hub & Search Modal State
   const [journeySearchQuery, setJourneySearchQuery] = useState('');
   const [selectedJourneyStudent, setSelectedJourneyStudent] = useState(null);
@@ -127,6 +132,40 @@ const AdminDashboard = () => {
   const [marksCourseFilter, setMarksCourseFilter] = useState('All');
   const [isMarksDetailsModalVisible, setIsMarksDetailsModalVisible] = useState(false);
   const [selectedStudentForMarks, setSelectedStudentForMarks] = useState(null);
+  const [isBreakdownModalVisible, setIsBreakdownModalVisible] = useState(false);
+  const [selectedExamForBreakdown, setSelectedExamForBreakdown] = useState(null);
+  
+  const [sendingReminderId, setSendingReminderId] = useState(null);
+  const [sentReminderId, setSentReminderId] = useState(null);
+
+  const handleSendReminder = async (student, pendingAmount) => {
+    try {
+      setSendingReminderId(student.id);
+      const newNotification = {
+        id: "REM-" + Date.now(),
+        type: "FEE_REMINDER",
+        title: "Fee Payment Reminder",
+        message: `Dear Student, you have a pending fee balance of ₹${pendingAmount}. Please clear it at the earliest.`,
+        timestamp: new Date().toISOString(),
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        read: false
+      };
+      
+      const currentNotifications = student.notifications || [];
+      await updateUserDoc(student.id, { notifications: [...currentNotifications, newNotification] });
+      
+      setSendingReminderId(null);
+      setSentReminderId(student.id);
+      message.success("Fee reminder sent to student successfully!");
+      
+      setTimeout(() => setSentReminderId(null), 3000);
+    } catch (error) {
+      console.error("Error sending reminder:", error);
+      setSendingReminderId(null);
+      message.error("Failed to send reminder.");
+    }
+  };
 
   const avatarInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -233,18 +272,25 @@ const AdminDashboard = () => {
           updatedRow.studentId = student.id;
           updatedRow.studentName = student.name;
           updatedRow.course = student.course || 'N/A';
-          updatedRow.totalFees = student.courseFee || 28000;
+          updatedRow.totalFees = Number(student.totalCourseFee || student.courseFee || 28000);
+          const studentReceipts = billHistory.filter(t => t.studentId === student.id || (t.enrollmentNo && student.enrollmentNo && t.enrollmentNo === student.enrollmentNo));
+          const totalPaid = studentReceipts.reduce((sum, item) => sum + (Number(item.amountPaid || item.totalAmount || item.amount) || 0), 0);
+          updatedRow.previouslyPaid = totalPaid;
+          updatedRow.remainingBalance = updatedRow.totalFees - updatedRow.previouslyPaid;
+          
           if (updatedRow.mode === 'Split') {
             updatedRow.amountPaid = (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0);
           }
           const paid = Number(updatedRow.amountPaid) || 0;
-          updatedRow.balance = updatedRow.totalFees - paid;
-          updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
+          updatedRow.balance = updatedRow.remainingBalance - paid;
+          updatedRow.status = updatedRow.remainingBalance <= 0 ? 'Paid' : 'Pending';
         } else {
           updatedRow.studentId = null;
           updatedRow.studentName = '';
           updatedRow.course = '';
           updatedRow.totalFees = 0;
+          updatedRow.previouslyPaid = 0;
+          updatedRow.remainingBalance = 0;
           if (updatedRow.mode === 'Split') {
             updatedRow.amountPaid = (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0);
           }
@@ -257,40 +303,50 @@ const AdminDashboard = () => {
         if (updatedRow.mode === 'Split') {
           updatedRow.amountPaid = (Number(updatedRow.cashAmount) || 0) + (Number(updatedRow.upiAmount) || 0);
         }
-        const paid = Number(updatedRow.amountPaid) || 0;
-        updatedRow.balance = updatedRow.totalFees - paid;
-        updatedRow.status = updatedRow.balance <= 0 ? 'Paid' : 'Pending';
+        let paid = Number(updatedRow.amountPaid) || 0;
+        
+        // Form Guard: Restrict maximum enterable amount to remaining balance if > 0
+        if (updatedRow.remainingBalance > 0 && paid > updatedRow.remainingBalance) {
+          paid = updatedRow.remainingBalance;
+          updatedRow.amountPaid = paid;
+          if (field === 'amountPaid') {
+            // we constrain it
+          }
+        }
+        
+        updatedRow.balance = (updatedRow.remainingBalance || 0) - paid;
+        updatedRow.status = updatedRow.remainingBalance <= 0 ? 'Paid' : 'Pending';
       }
       return updatedRow;
     });
   };
 
-  const fetchBillHistory = async () => {
-    try {
-      const { getAllFeeTransactions } = await import('../../firebase/services');
-      const { db } = await import('../../firebase/config');
-      const { deleteDoc, doc } = await import('firebase/firestore');
-      const transactions = await getAllFeeTransactions();
-      
-      const dups = transactions.filter(t => t.billNumber === '134');
-      if (dups.length > 1) {
-        console.log("Deleting duplicate:", dups[1].id);
-        await deleteDoc(doc(db, 'fee_transactions', dups[1].id));
-        transactions.splice(transactions.findIndex(t => t.id === dups[1].id), 1);
-      }
-
-      const orgStudentIds = new Set(studentList.map(s => s.id));
-      const orgTransactions = transactions.filter(t => orgStudentIds.has(t.studentId));
-      setBillHistory(orgTransactions);
-    } catch (error) {
-      console.error("Error fetching bill history:", error);
-    }
-  };
-
   useEffect(() => {
-    if (studentList.length > 0) {
-      fetchBillHistory();
-    }
+    if (studentList.length === 0) return;
+    
+    let unsubscribe;
+    const subscribeToBills = async () => {
+      try {
+        const { db } = await import('../../firebase/config');
+        const { collection, onSnapshot, query } = await import('firebase/firestore');
+        
+        const q = query(collection(db, 'fee_transactions'));
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          const transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const orgStudentIds = new Set(studentList.map(s => s.id));
+          const orgTransactions = transactions.filter(t => orgStudentIds.has(t.studentId));
+          setBillHistory(orgTransactions);
+        });
+      } catch (error) {
+        console.error("Error subscribing to bill history:", error);
+      }
+    };
+    
+    subscribeToBills();
+    
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [studentList]);
 
   const handleSaveBillingEntry = async () => {
@@ -356,8 +412,8 @@ const AdminDashboard = () => {
       await createReceipt(receiptData);
       
       const student = studentList.find(s => s.id === row.studentId);
-      const courseFee = student?.courseFee || 28000;
-      const currentPaid = student?.paidFee || student?.paidAmount || 0;
+      const courseFee = Number(student?.totalCourseFee || student?.courseFee || 28000);
+      const currentPaid = Number(student?.paidFee || 0);
       const newPaid = currentPaid + amount;
       const newPending = courseFee - newPaid;
       
@@ -369,7 +425,12 @@ const AdminDashboard = () => {
         remainingBalance: newPending,
         date: new Date().toLocaleDateString('en-IN'),
         time: new Date().toLocaleTimeString('en-IN'),
-        status: newPending <= 0 ? 'Paid' : 'Partial'
+        status: newPending <= 0 ? 'Paid' : 'Partial',
+        paymentMode: row.mode,
+        paymentSplit: row.mode === 'Split' ? {
+          cash: Number(row.cashAmount) || 0,
+          upi: Number(row.upiAmount) || 0
+        } : null
       };
 
       await updateUserDoc(row.studentId, {
@@ -379,7 +440,6 @@ const AdminDashboard = () => {
       });
       message.success("Payment recorded successfully!");
       fetchStaffAndStudents();
-      fetchBillHistory();
       setBillingEntry({ date: new Date().toISOString().split('T')[0], billCode: `BC-${Math.floor(Math.random()*10000)}`, enrollmentNo: '', studentId: null, studentName: '', course: '', totalFees: 0, amountPaid: '', splitMode: false, cashAmount: '', upiAmount: '', cardAmount: '', mode: 'Cash', balance: 0, status: 'Pending', dueDate: '', payer: '', cashier: '', billMonth: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }) });
     } catch (error) {
       message.error(error.message);
@@ -510,7 +570,12 @@ const AdminDashboard = () => {
         remainingBalance: newPending,
         date: new Date().toLocaleDateString('en-IN'),
         time: new Date().toLocaleTimeString('en-IN'),
-        status: newPending <= 0 ? 'Paid' : 'Partial'
+        status: newPending <= 0 ? 'Paid' : 'Partial',
+        paymentMode: values.paymentMode,
+        paymentSplit: values.paymentMode === 'Split' ? {
+          cash: Number(values.cashAmount) || 0,
+          upi: Number(values.upiAmount) || 0
+        } : null
       };
 
       await updateUserDoc(selectedStudentForFee.id, {
@@ -1013,7 +1078,19 @@ const AdminDashboard = () => {
     { title: 'Class Timing', dataIndex: 'classTiming', key: 'classTiming', width: 150 },
     { title: 'Start Date', dataIndex: 'startDate', key: 'startDate', width: 120 },
     { title: 'End Date', dataIndex: 'endDate', key: 'endDate', width: 120 },
-    { title: 'Students Enrolled', key: 'students', width: 200, render: (_, record) => record.studentNames?.join(', ') || 'None' },
+    { title: 'Assigned Students', key: 'students', width: 150, align: 'center', render: (_, record) => (
+      <button 
+        onClick={() => {
+          const detailedStudents = studentList.filter(s => record.studentIds?.includes(s.id));
+          setAssignedStudentsList(detailedStudents);
+          setAssignedStudentsCourseName(`${record.staffName || 'Faculty'} - ${record.courseName || 'Course'}`);
+          setIsViewAssignedStudentsModalVisible(true);
+        }}
+        style={{ padding: '6px 12px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: '1px solid var(--blue-200)', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+      >
+        View
+      </button>
+    )},
     { title: 'Actions', key: 'actions', width: 150, align: 'center', render: (_, record) => (
       <div className="flex gap-4 items-center justify-center">
         <Pencil className="w-5 h-5 text-blue-600 hover:text-blue-800 cursor-pointer transition-colors" title="Edit" aria-label="Edit" onClick={() => message.info("Edit Assignment coming soon")} />
@@ -1289,7 +1366,7 @@ const AdminDashboard = () => {
           <div onClick={() => setActiveTab('billing')} className={`uxer-sidebar-item ${activeTab === 'billing' ? 'active' : ''}`}><Banknote className="w-5 h-5" /> Billing Management</div>
           <div onClick={() => setActiveTab('admission')} className={`uxer-sidebar-item ${activeTab === 'admission' ? 'active' : ''}`}><UserPlus className="w-5 h-5" /> Student Admission</div>
           <div onClick={() => setActiveTab('reports')} className={`uxer-sidebar-item ${activeTab === 'reports' ? 'active' : ''}`}><FileText className="w-5 h-5" /> Reports</div>
-          <div onClick={() => setActiveTab('marks')} className={`uxer-sidebar-item ${activeTab === 'marks' ? 'active' : ''}`}><Award className="w-5 h-5" /> Marks Management</div>
+
 
           <div onClick={() => setActiveTab('settings')} className={`uxer-sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}><Settings className="w-5 h-5" /> Settings</div>
         </div>
@@ -1323,7 +1400,6 @@ const AdminDashboard = () => {
       <main className="uxer-main">
         <header className="uxer-header">
           <div className="uxer-header-left">
-            <div className="org-text">Organization</div>
             <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#000000', margin: 0 }}>Admin Dashboard</h1>
           </div>
           <div className="uxer-header-right">
@@ -1332,15 +1408,14 @@ const AdminDashboard = () => {
                 <Search className="w-4 h-4" style={{ color: '#999' }} />
                 <input 
                   type="text" 
-                  placeholder={`Search ${activeTab === '1' ? 'faculty' : (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2' ? 'students' : (activeTab === 'journey' ? 'student journey' : (activeTab === 'reports' ? 'reports...' : (activeTab === 'billing' ? 'billing records...' : (activeTab === 'marks' ? 'marks...' : '...')))))}`}
-                  value={activeTab === '1' ? facultySearchQuery : (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2' ? studentTextSearch : (activeTab === 'journey' ? journeySearchQuery : (activeTab === 'reports' ? reportSearchQuery : (activeTab === 'billing' ? billingSearchQuery : (activeTab === 'marks' ? marksSearchText : '')))))}
+                  placeholder={`Search ${activeTab === '1' ? 'faculty' : (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2' ? 'students' : (activeTab === 'journey' ? 'student journey' : (activeTab === 'reports' ? 'reports...' : (activeTab === 'billing' ? 'billing records...' : '...'))))}`}
+                  value={activeTab === '1' ? facultySearchQuery : (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2' ? studentTextSearch : (activeTab === 'journey' ? journeySearchQuery : (activeTab === 'reports' ? reportSearchQuery : (activeTab === 'billing' ? billingSearchQuery : ''))))}
                   onChange={(e) => {
                     if (activeTab === '1') setFacultySearchQuery(e.target.value);
                     else if (activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') setStudentTextSearch(e.target.value);
                     else if (activeTab === 'journey') setJourneySearchQuery(e.target.value);
                     else if (activeTab === 'reports') setReportSearchQuery(e.target.value);
                     else if (activeTab === 'billing') setBillingSearchQuery(e.target.value);
-                    else if (activeTab === 'marks') setMarksSearchText(e.target.value);
                   }}
                 />
                 <div className="uxer-shortcut">&#8984; F</div>
@@ -1461,7 +1536,7 @@ const AdminDashboard = () => {
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Email</label>
                             <input type="email" placeholder="Enter faculty email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
                               staffForm.setFieldsValue({email: e.target.value});
-                              if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                              if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(e.target.value)) {
                                 e.target.setCustomValidity('Please enter a valid Email address');
                               } else {
                                 e.target.setCustomValidity('');
@@ -1583,6 +1658,57 @@ const AdminDashboard = () => {
                   )}
                 </div>
               )}
+              
+              {isViewAssignedStudentsModalVisible && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="custom-modal-viewport-card" style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', width: '600px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Assigned Students for {assignedStudentsCourseName}</h2>
+                      <button onClick={() => setIsViewAssignedStudentsModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}><X /></button>
+                    </div>
+                    
+                    <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                      {assignedStudentsList.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>No students specifically assigned to this faculty entry.</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {assignedStudentsList.map((student, idx) => (
+                            <div key={idx} style={{ padding: '12px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--theme-bg-premium)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--blue-100)', color: 'var(--blue-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>
+                                  {student.name ? student.name.charAt(0).toUpperCase() : '?'}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{student.name}</div>
+                                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{student.enrollmentNo || 'N/A'}</div>
+                                </div>
+                              </div>
+                              <div style={{ 
+                                padding: '4px 12px', 
+                                borderRadius: '12px', 
+                                fontSize: '12px', 
+                                fontWeight: 'bold',
+                                backgroundColor: student.status === 'Active' ? '#dcfce7' : '#fee2e2',
+                                color: student.status === 'Active' ? '#166534' : '#991b1b'
+                              }}>
+                                {student.status || 'Active'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                      <button 
+                        onClick={() => setIsViewAssignedStudentsModalVisible(false)} 
+                        style={{ padding: '10px 24px', backgroundColor: '#f3f4f6', color: '#111827', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {(activeTab === '2' || activeTab === '2-1' || activeTab === '2-2') && (
                 <div className="flex flex-col">
@@ -1695,7 +1821,7 @@ const AdminDashboard = () => {
                             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Email</label>
                             <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
                               studentForm.setFieldsValue({email: e.target.value});
-                              if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                              if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(e.target.value)) {
                                 e.target.setCustomValidity('Please enter a valid Email address');
                               } else {
                                 e.target.setCustomValidity('');
@@ -2000,7 +2126,7 @@ const AdminDashboard = () => {
                         <Form.Item name="dateRange" label="Start & End Dates" rules={[{ required: true }]}>
                           <DatePicker.RangePicker className="w-full" size="large" />
                         </Form.Item>
-                        <Form.Item name="studentIds" label="Enroll Students" rules={[{ required: true }]}>
+                        <Form.Item name="studentIds" label="Assign Students" rules={[{ required: true }]}>
                           <Select
                             mode="multiple"
                             placeholder="Select students to enroll"
@@ -2077,21 +2203,56 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 overflow-hidden w-full">
-                    <h3 className="text-lg font-semibold mb-4 text-slate-800">Assigned Courses Roster</h3>
+                    <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
+                      <h3 className="text-lg font-semibold m-0 text-slate-800">Assigned Courses Roster</h3>
+                      <div style={{ display: 'flex', gap: '8px', backgroundColor: 'var(--bg-hover)', padding: '4px', borderRadius: '8px' }}>
+                        <button 
+                          onClick={() => { setCourseTab('active'); setCourseCurrentPage(1); }}
+                          style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'bold', fontSize: '14px', backgroundColor: courseTab === 'active' ? 'var(--card-bg)' : 'transparent', color: courseTab === 'active' ? 'var(--text-main)' : 'var(--text-secondary)', boxShadow: courseTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
+                        >
+                          Active Assigned Courses
+                        </button>
+                        <button 
+                          onClick={() => { setCourseTab('history'); setCourseCurrentPage(1); }}
+                          style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'bold', fontSize: '14px', backgroundColor: courseTab === 'history' ? 'var(--card-bg)' : 'transparent', color: courseTab === 'history' ? 'var(--text-main)' : 'var(--text-secondary)', boxShadow: courseTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
+                        >
+                          History of Assigned Courses
+                        </button>
+                      </div>
+                    </div>
                     <div className="w-full overflow-x-auto">
-                      <Table 
-                        dataSource={assignmentList.slice((courseCurrentPage - 1) * 20, courseCurrentPage * 20)} 
-                        columns={assignmentColumns} 
-                        rowKey="id" 
-                        pagination={false} 
-                        scroll={{ x: 'max-content' }} 
-                      />
-                      <CustomPagination 
-                        currentPage={courseCurrentPage} 
-                        totalItems={assignmentList.length} 
-                        itemsPerPage={20} 
-                        onPageChange={setCourseCurrentPage} 
-                      />
+                      {(() => {
+                        const currentDate = new Date();
+                        const filteredAssignments = assignmentList.filter(assignment => {
+                          if (!assignment.endDate) return courseTab === 'active';
+                          const endDate = new Date(assignment.endDate);
+                          endDate.setHours(23, 59, 59, 999);
+                          if (courseTab === 'active') {
+                            return currentDate <= endDate;
+                          } else {
+                            return currentDate > endDate;
+                          }
+                        });
+                        
+                        return (
+                          <>
+                            <Table 
+                              dataSource={filteredAssignments.slice((courseCurrentPage - 1) * 20, courseCurrentPage * 20)} 
+                              columns={assignmentColumns} 
+                              rowKey="id" 
+                              pagination={false} 
+                              scroll={{ x: 'max-content' }} 
+                              rowClassName={(record) => courseTab === 'history' ? 'completed-course-card' : ''}
+                            />
+                            <CustomPagination 
+                              currentPage={courseCurrentPage} 
+                              totalItems={filteredAssignments.length} 
+                              itemsPerPage={20} 
+                              onPageChange={setCourseCurrentPage} 
+                            />
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -2308,10 +2469,11 @@ const AdminDashboard = () => {
                       <div className="uxer-stat-content">
                         <div className="uxer-stat-value" style={{ color: 'var(--red-600, #dc2626)' }}>
                           ₹{studentList.reduce((sum, s) => { 
-                            const courseFee = s.courseFee || 28000;
-                            const studentTotalPaid = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo)).reduce((sSum, t) => sSum + (Number(t.totalAmount) || 0), 0);
+                            const courseFee = Number(s.totalCourseFee || s.courseFee || 28000);
+                            const studentReceipts = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo));
+                            const studentTotalPaid = studentReceipts.reduce((sSum, t) => sSum + (Number(t.amountPaid || t.totalAmount || t.amount) || 0), 0);
                             const pending = courseFee - studentTotalPaid;
-                            return sum + (pending > 0 ? pending : 0); 
+                            return sum + (pending > 0 ? pending : 0);
                           }, 0).toLocaleString()}
                         </div>
                       </div>
@@ -2369,23 +2531,29 @@ const AdminDashboard = () => {
                         
                         <div>
                           <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Payment Amount</label>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <input type="number" value={billingEntry.amountPaid} readOnly={billingEntry.mode === 'Split'} onChange={(e) => handleBillingEntryChange('amountPaid', e.target.value)} placeholder="Amount" style={{ width: '60%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: billingEntry.mode === 'Split' ? 'var(--bg-hover)' : 'var(--card-bg)', color: 'var(--text-main)', fontWeight: 'bold' }} />
-                              <select value={billingEntry.mode} onChange={(e) => handleBillingEntryChange('mode', e.target.value)} className="uxer-form-select" style={{ width: '40%', padding: '10px', margin: 0 }}>
-                                <option value="Cash">Cash</option>
-                                <option value="GPay">GPay</option>
-                                <option value="Card">Card</option>
-                                <option value="Split">Split</option>
-                              </select>
+                          {billingEntry.remainingBalance <= 0 && billingEntry.studentId ? (
+                            <div style={{ padding: '12px', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--green-600, #16a34a)', borderRadius: '8px', fontWeight: 'bold' }}>
+                              This student has cleared all fees.
                             </div>
-                            {billingEntry.mode === 'Split' && (
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                               <div style={{ display: 'flex', gap: '8px' }}>
-                                <input type="number" value={billingEntry.cashAmount} onChange={(e) => handleBillingEntryChange('cashAmount', e.target.value)} placeholder="Cash Amount" style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
-                                <input type="number" value={billingEntry.upiAmount} onChange={(e) => handleBillingEntryChange('upiAmount', e.target.value)} placeholder="GPay Amount" style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                                <input type="number" value={billingEntry.amountPaid} readOnly={billingEntry.mode === 'Split' || (billingEntry.remainingBalance <= 0 && billingEntry.studentId)} onChange={(e) => handleBillingEntryChange('amountPaid', e.target.value)} placeholder="Amount" style={{ width: '60%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: billingEntry.mode === 'Split' || (billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'var(--bg-hover)' : 'var(--card-bg)', color: 'var(--text-main)', fontWeight: 'bold' }} />
+                                <select value={billingEntry.mode} disabled={billingEntry.remainingBalance <= 0 && billingEntry.studentId} onChange={(e) => handleBillingEntryChange('mode', e.target.value)} className="uxer-form-select" style={{ width: '40%', padding: '10px', margin: 0 }}>
+                                  <option value="Cash">Cash</option>
+                                  <option value="GPay">GPay</option>
+                                  <option value="Card">Card</option>
+                                  <option value="Split">Split</option>
+                                </select>
                               </div>
-                            )}
-                          </div>
+                              {billingEntry.mode === 'Split' && (
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <input type="number" value={billingEntry.cashAmount} disabled={billingEntry.remainingBalance <= 0 && billingEntry.studentId} onChange={(e) => handleBillingEntryChange('cashAmount', e.target.value)} placeholder="Cash Amount" style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                                  <input type="number" value={billingEntry.upiAmount} disabled={billingEntry.remainingBalance <= 0 && billingEntry.studentId} onChange={(e) => handleBillingEntryChange('upiAmount', e.target.value)} placeholder="GPay Amount" style={{ width: '50%', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', color: 'var(--text-main)' }} />
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -2403,14 +2571,36 @@ const AdminDashboard = () => {
                         <div>
                           <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: 'var(--text-secondary)', fontSize: '13px' }}>Balance Summary</label>
                           <div style={{ padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--card-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>₹{billingEntry.balance}</span>
-                            <span style={{ backgroundColor: billingEntry.status === 'Paid' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 179, 8, 0.1)', color: billingEntry.status === 'Paid' ? 'var(--green-600, #16a34a)' : 'var(--yellow-600, #ca8a04)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>{billingEntry.status}</span>
+                            {billingEntry.remainingBalance <= 0 && billingEntry.studentId ? (
+                              <span style={{ fontWeight: 'bold', color: 'var(--green-600, #16a34a)' }}>Fully Paid / Cleared</span>
+                            ) : (
+                              <span style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>₹{billingEntry.remainingBalance || 0} (Pending)</span>
+                            )}
+                            <span style={{ backgroundColor: (billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 179, 8, 0.1)', color: (billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'var(--green-600, #16a34a)' : 'var(--yellow-600, #ca8a04)', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+                              {(billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'Cleared' : 'Pending'}
+                            </span>
                           </div>
                         </div>
                       </div>
                       
                       <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-                        <button onClick={handleSaveBillingEntry} style={{ padding: '12px 24px', backgroundColor: 'var(--blue-600)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button 
+                          onClick={handleSaveBillingEntry} 
+                          disabled={billingEntry.remainingBalance <= 0 && billingEntry.studentId}
+                          style={{ 
+                            padding: '12px 24px', 
+                            backgroundColor: (billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'var(--bg-hover)' : 'var(--blue-600)', 
+                            color: (billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'var(--text-secondary)' : 'white', 
+                            border: 'none', 
+                            borderRadius: '8px', 
+                            cursor: (billingEntry.remainingBalance <= 0 && billingEntry.studentId) ? 'not-allowed' : 'pointer', 
+                            fontSize: '14px', 
+                            fontWeight: 'bold', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px' 
+                          }}
+                        >
                           <CheckCircle size={18} /> Save Transaction
                         </button>
                       </div>
@@ -2470,7 +2660,7 @@ const AdminDashboard = () => {
                           const url = URL.createObjectURL(blob);
                           const link = document.createElement("a");
                           link.setAttribute("href", url);
-                          link.setAttribute("download", `Fee_Report_${month.replace(' ', '_')}.csv`);
+                          link.setAttribute("download", `Monthly_Statement_${month.replace(' ', '_')}.csv`);
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
@@ -2491,6 +2681,8 @@ const AdminDashboard = () => {
                                   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; }
                                   .receipt-box { border: 1px solid #ddd; padding: 30px; border-radius: 8px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
                                   .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+                                  .header .logo { max-height: 60px; width: auto; object-fit: contain; margin-bottom: 12px; }
+                                  @media print { .header .logo { display: inline-block !important; -webkit-print-color-adjust: exact; } }
                                   .header h1 { margin: 0; color: #2563eb; }
                                   .header p { margin: 5px 0 0 0; color: #64748b; }
                                   .row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 14px; }
@@ -2503,6 +2695,7 @@ const AdminDashboard = () => {
                               <body>
                                 <div class="receipt-box">
                                   <div class="header">
+                                    ${logoUrl ? `<img src="${logoUrl}" alt="Organization Logo" class="logo" />` : ''}
                                     <h1>${user?.organizationName || 'Organization'}</h1>
                                     <p>Fee Payment Receipt</p>
                                   </div>
@@ -2560,7 +2753,7 @@ const AdminDashboard = () => {
                                           onClick={(e) => { e.stopPropagation(); handleExportMonthlyCSV(month, rows); }}
                                           style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', backgroundColor: 'var(--blue-500)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                                         >
-                                          <Download size={14} /> Export CSV
+                                          <Download size={14} /> Download Statement
                                         </button>
                                       </div>
                                     </div>
@@ -2636,8 +2829,9 @@ const AdminDashboard = () => {
                           <tbody>
                             {(() => {
                               const dueStudents = studentList.map(s => {
-                                const total = s.courseFee || 28000;
-                                const paid = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo)).reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0);
+                                const total = Number(s.totalCourseFee || s.courseFee || 28000);
+                                const studentReceipts = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo));
+                                const paid = studentReceipts.reduce((sum, t) => sum + (Number(t.amountPaid || t.totalAmount || t.amount) || 0), 0);
                                 const pending = total - paid;
                                 return { ...s, dynamicTotal: total, dynamicPaid: paid, dynamicPending: pending };
                               }).filter(s => s.dynamicPending > 0);
@@ -2671,10 +2865,11 @@ const AdminDashboard = () => {
                         </table>
                         {(() => {
                           const dueStudents = studentList.map(s => {
-                            const total = s.courseFee || 28000;
-                            const paid = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo)).reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0);
+                            const total = Number(s.totalCourseFee || s.courseFee || 28000);
+                            const studentReceipts = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo));
+                            const paid = studentReceipts.reduce((sum, t) => sum + (Number(t.amountPaid || t.totalAmount || t.amount) || 0), 0);
                             const pending = total - paid;
-                            return { ...s, dynamicPending: pending };
+                            return { ...s, dynamicTotal: total, dynamicPaid: paid, dynamicPending: pending };
                           }).filter(s => s.dynamicPending > 0);
                           return (
                             <CustomPagination 
@@ -3091,7 +3286,6 @@ const AdminDashboard = () => {
                    <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'bold', marginBottom: '4px' }}>Course Registration</div>
                    <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', backgroundColor: 'var(--theme-bg-premium)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                      {selectedJourneyStudent.course || 'No Course Assigned'}
-                     <div style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: '8px' }}>Course Fee: ₹{selectedJourneyStudent.courseFee || 28000} | Paid: ₹{selectedJourneyStudent.paidFee || 0}</div>
                    </div>
                  </div>
 
@@ -3484,34 +3678,54 @@ const AdminDashboard = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {studentList.filter(s => {
-                         const courseFee = Number(s.courseFee) || 28000;
-                         const paid = s.receipts?.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0) || Number(s.paidFee) || 0;
-                         const isDefaulter = (courseFee - paid) > 0;
-                         const matchesCourse = admissionReportCourseFilter === 'All' || s.course === admissionReportCourseFilter;
-                         let matchesSearch = true;
-                         if (reportSearchQuery.trim()) {
-                           const q = reportSearchQuery.toLowerCase();
-                           const matchName = (s.name || '').toLowerCase().includes(q);
-                           const matchEnroll = (s.enrollmentNo || '').toLowerCase().includes(q);
-                           matchesSearch = matchName || matchEnroll;
-                         }
-                         return isDefaulter && matchesCourse && matchesSearch;
-                      }).map(s => {
-                         const courseFee = Number(s.courseFee) || 28000;
-                         const paid = s.receipts?.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0) || Number(s.paidFee) || 0;
-                         const pending = courseFee - paid;
-                         return (
+                      {(() => {
+                        const defaulters = studentList.map(s => {
+                          const courseFee = Number(s.totalCourseFee || s.courseFee || 28000);
+                          const studentReceipts = billHistory.filter(t => t.studentId === s.id || (t.enrollmentNo && s.enrollmentNo && t.enrollmentNo === s.enrollmentNo));
+                          const paid = studentReceipts.reduce((sum, t) => sum + (Number(t.amountPaid || t.totalAmount || t.amount) || 0), 0);
+                          const pending = courseFee - paid;
+                          return { ...s, dynamicTotal: courseFee, dynamicPaid: paid, dynamicPending: pending };
+                        }).filter(s => {
+                          const isDefaulter = s.dynamicPending > 0;
+                          const matchesCourse = admissionReportCourseFilter === 'All' || s.course === admissionReportCourseFilter;
+                          let matchesSearch = true;
+                          if (reportSearchQuery.trim()) {
+                            const q = reportSearchQuery.toLowerCase();
+                            const matchName = (s.name || '').toLowerCase().includes(q);
+                            const matchEnroll = (s.enrollmentNo || '').toLowerCase().includes(q);
+                            matchesSearch = matchName || matchEnroll;
+                          }
+                          return isDefaulter && matchesCourse && matchesSearch;
+                        });
+
+                        if (defaulters.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>No fee defaulters found!</td>
+                            </tr>
+                          );
+                        }
+
+                        return defaulters.map(s => (
                           <tr key={s.id}>
                             <td>{s.name}</td>
                             <td>{s.course || 'N/A'}</td>
-                            <td>₹{courseFee}</td>
-                            <td style={{ color: 'var(--green-600)' }}>₹{paid}</td>
-                            <td style={{ color: 'var(--red-600)', fontWeight: 'bold' }}>₹{pending}</td>
-                            <td><button className="uxer-tab" style={{ border: '1px solid var(--border-color)' }}>Send Reminder</button></td>
+                            <td>₹{s.dynamicTotal}</td>
+                            <td style={{ color: 'var(--green-600)' }}>₹{s.dynamicPaid}</td>
+                            <td style={{ color: 'var(--red-600)', fontWeight: 'bold' }}>₹{s.dynamicPending}</td>
+                            <td>
+                              <button 
+                                onClick={() => handleSendReminder(s, s.dynamicPending)}
+                                disabled={sendingReminderId === s.id || sentReminderId === s.id}
+                                className="uxer-tab" 
+                                style={{ border: '1px solid var(--border-color)', backgroundColor: sentReminderId === s.id ? 'var(--green-600)' : undefined, color: sentReminderId === s.id ? '#fff' : undefined }}
+                              >
+                                {sendingReminderId === s.id ? 'Sending...' : (sentReminderId === s.id ? 'Sent ✓' : 'Send Reminder')}
+                              </button>
+                            </td>
                           </tr>
-                         );
-                      })}
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -3633,6 +3847,15 @@ const AdminDashboard = () => {
                               <X className="w-6 h-6" style={{ color: 'var(--text-secondary)' }} />
                             </button>
                           </div>
+
+                          {selectedAttendanceReport.sessionTopics && (
+                            <div style={{ padding: '24px 24px 0 24px' }}>
+                              <h5 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: 'var(--text-main)' }}>Session Topics / Class Notes</h5>
+                              <div style={{ backgroundColor: 'var(--card-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '14px', whiteSpace: 'pre-wrap' }}>
+                                {selectedAttendanceReport.sessionTopics}
+                              </div>
+                            </div>
+                          )}
                           
                           <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px', alignContent: 'start' }}>
                             {selectedAttendanceReport.records && Array.isArray(selectedAttendanceReport.records) ? selectedAttendanceReport.records.map((r, i) => (
@@ -3707,190 +3930,139 @@ const AdminDashboard = () => {
             )}
 
             {activeReportTab === 'marks' && (
-              <div className="uxer-table-wrapper">
-                <table className="uxer-table">
-                  <thead>
-                    <tr>
-                      <th>Student Name</th>
-                      <th>Enrollment No</th>
-                      <th>Course</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const filteredStudents = studentList.filter(s => {
-                        if (!s.examHistory || s.examHistory.length === 0) return false;
-                        if (reportSearchQuery.trim()) {
+              <div className="flex flex-col">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h2 className="uxer-form-title" style={{ margin: 0 }}>Marks Management</h2>
+                  <button 
+                    onClick={() => {
+                      const flatMarks = studentList.filter(s => {
+                        if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
+                        if (reportSearchQuery) {
                           const q = reportSearchQuery.toLowerCase();
-                          const matchName = (s.name || '').toLowerCase().includes(q);
-                          const matchEnroll = (s.enrollmentNo || '').toLowerCase().includes(q);
-                          if (!matchName && !matchEnroll) return false;
+                          const sName = s.name ? String(s.name).toLowerCase() : '';
+                          const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
+                          return (sName.includes(q) || sEnrollment.includes(q));
                         }
                         return true;
+                      }).flatMap(s => {
+                        const history = s.examHistory || [];
+                        if (history.length === 0) {
+                          return [{
+                            'Student Name': s.name || 'N/A',
+                            'Enrollment No': s.enrollmentNo || s.enrollmentNumber || 'N/A',
+                            'Course': s.course || 'N/A',
+                            'Exam Name': '-',
+                            'Marks': '-',
+                            'Grade': '-',
+                            'Date': '-'
+                          }];
+                        }
+                        return history.map(exam => ({
+                          'Student Name': s.name || 'N/A',
+                          'Enrollment No': s.enrollmentNo || s.enrollmentNumber || 'N/A',
+                          'Course': s.course || 'N/A',
+                          'Exam Name': exam.examName,
+                          'Marks': exam.marks,
+                          'Grade': exam.grade,
+                          'Date': exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A'
+                        }));
                       });
+                      
+                      if (flatMarks.length === 0) return;
+                      const csv = Papa.unparse(flatMarks);
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      link.href = URL.createObjectURL(blob);
+                      link.download = `Marks_Report_${marksCourseFilter}.csv`;
+                      link.style.visibility = 'hidden';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    style={{ padding: '8px 16px', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Download size={16} /> Download CSV
+                  </button>
+                </div>
 
-                      if (filteredStudents.length === 0) {
-                        return <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No exam records found.</td></tr>;
-                      }
-
-                      return filteredStudents.map((s, i) => (
-                        <tr key={s.id || i}>
-                          <td style={{ fontWeight: '500' }}>{s.name}</td>
-                          <td>{s.enrollmentNo || s.enrollmentNumber || 'N/A'}</td>
-                          <td>{s.course || 'N/A'}</td>
-                          <td>
-                            <button
-                              onClick={() => {
-                                setSelectedStudentForMarks(s);
-                                setIsMarksDetailsModalVisible(true);
-                              }}
-                              className="uxer-action-btn"
-                              style={{ padding: '6px 12px', fontSize: '13px' }}
-                            >
-                              <Eye size={16} style={{ marginRight: '6px' }} /> View
-                            </button>
-                          </td>
+                <div className="native-form-card" style={{ marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'flex-end' }}>
+                    <div style={{ width: 'auto', flexShrink: 0 }}>
+                      <select 
+                        className="uxer-form-select" 
+                        value={marksCourseFilter} 
+                        onChange={(e) => setMarksCourseFilter(e.target.value)}
+                        style={{ margin: 0 }}
+                      >
+                        <option value="All">All Courses</option>
+                        {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="native-form-card">
+                  <div className="uxer-table-wrapper">
+                    <table className="uxer-table">
+                      <thead>
+                        <tr>
+                          <th>Student Name</th>
+                          <th>Enrollment No</th>
+                          <th>Course</th>
+                          <th>Actions</th>
                         </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const filteredStudents = studentList.filter(s => {
+                            if (!s.examHistory || s.examHistory.length === 0) return false;
+                            if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
+                            if (reportSearchQuery) {
+                              const q = reportSearchQuery.toLowerCase();
+                              const sName = s.name ? String(s.name).toLowerCase() : '';
+                              const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
+                              return (sName.includes(q) || sEnrollment.includes(q));
+                            }
+                            return true;
+                          });
+                          
+                          if (filteredStudents.length === 0) {
+                            return <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No students found matching your criteria.</td></tr>;
+                          }
+
+                          return filteredStudents.map((s, i) => (
+                            <tr key={s.id || i}>
+                              <td style={{ fontWeight: '500' }}>{s.name}</td>
+                              <td>{s.enrollmentNo || s.enrollmentNumber || 'N/A'}</td>
+                              <td>{s.course || 'N/A'}</td>
+                              <td>
+                                <button
+                                  onClick={() => {
+                                    setSelectedStudentForMarks(s);
+                                    setIsMarksDetailsModalVisible(true);
+                                  }}
+                                  className="uxer-action-btn"
+                                  style={{ padding: '6px 12px', fontSize: '13px' }}
+                                >
+                                  <Eye size={16} style={{ marginRight: '6px' }} /> View
+                                </button>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {activeTab === 'marks' && (
-        <div className="flex flex-col">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-            <h2 className="uxer-form-title" style={{ margin: 0 }}>Marks Management</h2>
-            <button 
-              onClick={() => {
-                const flatMarks = studentList.filter(s => {
-                  if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
-                  if (marksSearchText) {
-                    const q = marksSearchText.toLowerCase();
-                    const sName = s.name ? String(s.name).toLowerCase() : '';
-                    const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
-                    return (sName.includes(q) || sEnrollment.includes(q));
-                  }
-                  return true;
-                }).flatMap(s => {
-                  const history = s.examHistory || [];
-                  if (history.length === 0) {
-                    return [{
-                      'Student Name': s.name || 'N/A',
-                      'Enrollment No': s.enrollmentNo || s.enrollmentNumber || 'N/A',
-                      'Course': s.course || 'N/A',
-                      'Exam Name': '-',
-                      'Marks': '-',
-                      'Grade': '-',
-                      'Date': '-'
-                    }];
-                  }
-                  return history.map(exam => ({
-                    'Student Name': s.name || 'N/A',
-                    'Enrollment No': s.enrollmentNo || s.enrollmentNumber || 'N/A',
-                    'Course': s.course || 'N/A',
-                    'Exam Name': exam.examName,
-                    'Marks': exam.marks,
-                    'Grade': exam.grade,
-                    'Date': exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A'
-                  }));
-                });
-                
-                if (flatMarks.length === 0) return;
-                const csv = Papa.unparse(flatMarks);
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = `Marks_Report_${marksCourseFilter}.csv`;
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
-              style={{ padding: '8px 16px', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-            >
-              <Download size={16} /> Download CSV
-            </button>
-          </div>
 
-          <div className="native-form-card" style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'flex-end' }}>
-              <div style={{ width: 'auto', flexShrink: 0 }}>
-                <select 
-                  className="uxer-form-select" 
-                  value={marksCourseFilter} 
-                  onChange={(e) => setMarksCourseFilter(e.target.value)}
-                  style={{ margin: 0 }}
-                >
-                  <option value="All">All Courses</option>
-                  {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-          
-          <div className="native-form-card">
-            <div className="uxer-table-wrapper">
-              <table className="uxer-table">
-                <thead>
-                  <tr>
-                    <th>Student Name</th>
-                    <th>Enrollment No</th>
-                    <th>Course</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const filteredStudents = studentList.filter(s => {
-                      if (!s.examHistory || s.examHistory.length === 0) return false;
-                      if (marksCourseFilter !== 'All' && s.course !== marksCourseFilter) return false;
-                      if (marksSearchText) {
-                        const q = marksSearchText.toLowerCase();
-                        const sName = s.name ? String(s.name).toLowerCase() : '';
-                        const sEnrollment = (s.enrollmentNo || s.enrollmentNumber || '').toString().toLowerCase();
-                        return (sName.includes(q) || sEnrollment.includes(q));
-                      }
-                      return true;
-                    });
-                    
-                    if (filteredStudents.length === 0) {
-                      return <tr><td colSpan="4" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>No students found matching your criteria.</td></tr>;
-                    }
-
-                    return filteredStudents.map((s, i) => (
-                      <tr key={s.id || i}>
-                        <td style={{ fontWeight: '500' }}>{s.name}</td>
-                        <td>{s.enrollmentNo || s.enrollmentNumber || 'N/A'}</td>
-                        <td>{s.course || 'N/A'}</td>
-                        <td>
-                          <button
-                            onClick={() => {
-                              setSelectedStudentForMarks(s);
-                              setIsMarksDetailsModalVisible(true);
-                            }}
-                            className="uxer-action-btn"
-                            style={{ padding: '6px 12px', fontSize: '13px' }}
-                          >
-                            <Eye size={16} style={{ marginRight: '6px' }} /> View
-                          </button>
-                        </td>
-                      </tr>
-                    ));
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
           </div>
         </div>
       </main>
@@ -4108,7 +4280,7 @@ const AdminDashboard = () => {
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Email</label>
               <input type="email" placeholder="Enter email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
                 editForm.setFieldsValue({email: e.target.value});
-                if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(e.target.value)) {
                   e.target.setCustomValidity('Please enter a valid Email address');
                 } else {
                   e.target.setCustomValidity('');
@@ -4603,21 +4775,39 @@ const AdminDashboard = () => {
                 const legacyAmount = selectedJourneyStudent?.paidFee || selectedJourneyStudent?.paidAmount || 0;
                 const studentBills = billHistory.filter(t => t.studentId === selectedJourneyStudent?.id || (t.enrollmentNo && selectedJourneyStudent?.enrollmentNo && t.enrollmentNo === selectedJourneyStudent.enrollmentNo));
                 
-                let displayLedger = studentBills.map(bill => ({
-                  receiptId: bill.billNumber || bill.id,
-                  date: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleDateString(),
-                  time: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleTimeString(),
-                  amountPaid: bill.totalAmount,
-                  status: 'Paid'
-                }));
+                let displayLedger = studentBills.map(bill => {
+                  const rawDateStr = bill.paymentDate || bill.date || null;
+                  const dateObj = new Date(rawDateStr || bill.timestamp?.seconds * 1000 || Date.now());
+                  let timeStr = dateObj.toLocaleTimeString('en-IN');
+                  
+                  // Fix legacy 5:30 AM bug caused by UTC date-only strings
+                  if (timeStr.toLowerCase() === '5:30:00 am' || timeStr.toLowerCase() === '05:30:00 am') {
+                    timeStr = bill.time || '';
+                  }
+                  
+                  let paymentModeStr = bill.paymentMode || bill.mode || 'Cash / Manual Entry';
+                  if (paymentModeStr === 'Split') {
+                     paymentModeStr = `Split (Cash: ₹${bill.cashAmount || bill.paymentSplit?.cash || 0} | UPI: ₹${bill.gpayAmount || bill.upiAmount || bill.paymentSplit?.upi || 0})`;
+                  } else if (paymentModeStr === 'UPI' || paymentModeStr === 'GPay') {
+                     paymentModeStr = 'UPI / GPay';
+                  }
+                  
+                  return {
+                    receiptId: bill.billNumber || bill.billCode || bill.id,
+                    date: dateObj.toLocaleDateString('en-IN'),
+                    time: timeStr,
+                    amountPaid: bill.totalAmount || bill.amountPaid || bill.amount,
+                    status: paymentModeStr
+                  };
+                });
                 
                 if (displayLedger.length === 0 && legacyAmount > 0) {
                   displayLedger = [{
                     receiptId: "LEGACY-REC",
-                    date: selectedJourneyStudent.dateOfJoining || "Initial",
+                    date: new Date(selectedJourneyStudent.dateOfJoining || Date.now()).toLocaleDateString('en-IN'),
                     time: "",
                     amountPaid: legacyAmount,
-                    status: "Initial Payment"
+                    status: "Cash / Manual Entry"
                   }];
                 }
                 
@@ -4632,15 +4822,15 @@ const AdminDashboard = () => {
                         <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Receipt ID</th>
                         <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Date & Time</th>
                         <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Amount Paid</th>
-                        <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Status</th>
+                        <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: '13px', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Payment Mode</th>
                       </tr>
                     </thead>
                     <tbody>
                       {displayLedger.map((bill, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>{bill.receiptId || bill.billId}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)', fontWeight: 'bold' }}>{bill.receiptId}</td>
                           <td style={{ padding: '16px', fontSize: '14px', color: 'var(--text-main)' }}>{bill.date} {bill.time || ''}</td>
-                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>₹{bill.amountPaid || bill.amount || 0}</td>
+                          <td style={{ padding: '16px', fontSize: '14px', color: 'var(--green-600, #16a34a)', fontWeight: 'bold' }}>₹{bill.amountPaid || 0}</td>
                           <td style={{ padding: '16px', fontSize: '14px' }}>
                             <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: 'rgba(22, 163, 74, 0.1)', color: 'var(--green-600, #16a34a)', fontWeight: 'bold', fontSize: '12px' }}>
                               {bill.status}
@@ -4787,33 +4977,137 @@ const AdminDashboard = () => {
                     <th>Grade</th>
                     <th>Staff Role</th>
                     <th>Uploaded By</th>
-                    <th>Subject Handled</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selectedStudentForMarks.examHistory && selectedStudentForMarks.examHistory.length > 0 ? (
-                    selectedStudentForMarks.examHistory.map((exam, i) => (
-                      <tr key={i}>
-                        <td>{exam.examName}</td>
-                        <td>{exam.testDate || (exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A')}</td>
-                        <td style={{ fontWeight: 'bold' }}>
-                          {exam.percentage !== undefined ? `${exam.totalObtained}/${exam.totalMax} (${exam.percentage}%)` : exam.marks}
-                        </td>
-                        <td>
-                          <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
-                            {exam.grade}
-                          </span>
-                        </td>
-                        <td><span style={{ textTransform: 'capitalize' }}>{exam.staffRole || 'N/A'}</span></td>
-                        <td>{exam.uploadedByStaffName || exam.updatedBy || 'N/A'}</td>
-                        <td>{exam.subjectHandled || 'N/A'}</td>
-                      </tr>
-                    ))
+                    selectedStudentForMarks.examHistory.map((exam, i) => {
+                      const fallbackAssignment = assignmentList.find(a => a.courseName === selectedStudentForMarks.course && a.studentIds?.includes(selectedStudentForMarks.id));
+                      const fallbackStaff = fallbackAssignment ? fallbackAssignment.staffName : 'N/A';
+                      const staffName = exam.uploadedByStaffName || exam.updatedBy || fallbackStaff;
+                      const assignedRole = exam.staffRole || 'Faculty';
+
+                      let totalObtained = exam.totalObtained !== undefined ? exam.totalObtained : Number(exam.marks) || 0;
+                      let totalMax = exam.totalMax !== undefined ? exam.totalMax : 100;
+                      let computedPercentage = exam.percentage !== undefined ? exam.percentage : ((totalObtained / totalMax) * 100).toFixed(2);
+                      
+                      const getGrade = (pct) => {
+                        if (pct >= 90) return 'A+';
+                        if (pct >= 80) return 'A';
+                        if (pct >= 70) return 'B';
+                        if (pct >= 60) return 'C';
+                        return 'Fail';
+                      };
+                      
+                      let computedGrade = exam.grade || getGrade(computedPercentage);
+
+                      if (exam.subjects && Array.isArray(exam.subjects) && exam.subjects.length > 0) {
+                        totalObtained = exam.subjects.reduce((sum, sub) => sum + (Number(sub.marks) || 0), 0);
+                        totalMax = exam.subjects.reduce((sum, sub) => sum + (Number(sub.maxMarks) || 100), 0);
+                        computedPercentage = ((totalObtained / totalMax) * 100).toFixed(2);
+                        computedGrade = getGrade(computedPercentage);
+                      }
+
+                      return (
+                        <tr key={i}>
+                          <td>{exam.examName}</td>
+                          <td>{exam.testDate || (exam.date ? new Date(exam.date).toLocaleDateString() : 'N/A')}</td>
+                          <td style={{ fontWeight: 'bold' }}>
+                            {totalObtained}/{totalMax} ({computedPercentage}%)
+                          </td>
+                          <td>
+                            <span style={{ backgroundColor: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
+                              {computedGrade}
+                            </span>
+                          </td>
+                          <td><span style={{ textTransform: 'capitalize' }}>{assignedRole}</span></td>
+                          <td>{staffName}</td>
+                          <td>
+                            <button
+                              onClick={() => {
+                                setSelectedExamForBreakdown({ ...exam, fallbackStaff, computedPercentage, computedGrade, totalObtained, totalMax });
+                                setIsBreakdownModalVisible(true);
+                              }}
+                              className="uxer-action-btn"
+                              style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: 'var(--blue-50)', color: 'var(--blue-600)', border: '1px solid var(--blue-200)' }}
+                            >
+                              View Breakdown
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr><td colSpan="7" style={{ textAlign: 'center', color: '#64748b' }}>No test history available.</td></tr>
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBreakdownModalVisible && selectedExamForBreakdown && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="custom-modal-viewport-card" style={{ backgroundColor: '#ffffff', color: '#111827', width: '700px', maxWidth: '94%', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto', position: 'relative' }}>
+            <button 
+              onClick={() => {
+                setIsBreakdownModalVisible(false);
+                setSelectedExamForBreakdown(null);
+              }}
+              style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 'bold' }}>Subject Breakdown: {selectedExamForBreakdown.examName}</h2>
+            <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '14px' }}>Date: {selectedExamForBreakdown.testDate || (selectedExamForBreakdown.date ? new Date(selectedExamForBreakdown.date).toLocaleDateString() : 'N/A')}</p>
+            
+            <div className="uxer-table-wrapper" style={{ marginBottom: '24px' }}>
+              <table className="uxer-table">
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Marks Obtained</th>
+                    <th>Max Marks</th>
+                    <th>Subject Handled By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedExamForBreakdown.subjects && selectedExamForBreakdown.subjects.length > 0 ? (
+                    selectedExamForBreakdown.subjects.map((sub, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 'bold' }}>{sub.subjectName || sub.name || 'Unknown'}</td>
+                        <td>{sub.marks || 0}</td>
+                        <td>{sub.maxMarks || 100}</td>
+                        <td>{sub.handledBy || selectedExamForBreakdown.uploadedByStaffName || selectedExamForBreakdown.fallbackStaff}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td style={{ fontWeight: 'bold' }}>General / Overall</td>
+                      <td>{selectedExamForBreakdown.marks || selectedExamForBreakdown.totalObtained || 0}</td>
+                      <td>{selectedExamForBreakdown.totalMax || 100}</td>
+                      <td>{selectedExamForBreakdown.subjectHandled || selectedExamForBreakdown.uploadedByStaffName || selectedExamForBreakdown.fallbackStaff}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ padding: '16px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ color: '#64748b', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Total Marks</span>
+                <strong style={{ fontSize: '18px' }}>{selectedExamForBreakdown.totalObtained}/{selectedExamForBreakdown.totalMax}</strong>
+              </div>
+              <div>
+                <span style={{ color: '#64748b', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Percentage</span>
+                <strong style={{ fontSize: '18px' }}>{selectedExamForBreakdown.computedPercentage}%</strong>
+              </div>
+              <div>
+                <span style={{ color: '#64748b', fontSize: '13px', display: 'block', marginBottom: '4px' }}>Overall Grade</span>
+                <strong style={{ fontSize: '18px', color: 'var(--blue-600)' }}>{selectedExamForBreakdown.computedGrade}</strong>
+              </div>
             </div>
           </div>
         </div>

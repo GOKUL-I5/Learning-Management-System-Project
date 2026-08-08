@@ -1,14 +1,31 @@
-import React, { useState } from 'react';
-import { Search, Moon, Sun, Bell, Settings, Download, Plus, Grid, Calendar, FileText, MessageSquare, LayoutDashboard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Moon, Sun, Bell, Settings, Download, Plus, Grid, Calendar, FileText, MessageSquare, LayoutDashboard, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const SaaSDashboardLayout = ({ children, activeTab, onTabChange, userName, onAddClick, menuItems = [] }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const navigate = useNavigate();
+  const [userProfile, setUserProfile] = useState({ name: 'User', role: 'admin', email: '' });
+
+  useEffect(() => {
+    const userStr = localStorage.getItem('lms_user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        setUserProfile({ name: user.name || userName || 'User', role: user.role || 'admin', email: user.email || '' });
+      } catch (e) {}
+    } else if (userName) {
+        setUserProfile(prev => ({...prev, name: userName}));
+    }
+  }, [userName]);
 
   const handleLogout = () => {
     localStorage.removeItem('lms_user');
     navigate('/login');
+  };
+
+  const getInitials = (name) => {
+    return name ? name.charAt(0).toUpperCase() : 'U';
   };
 
   return (
@@ -38,8 +55,20 @@ const SaaSDashboardLayout = ({ children, activeTab, onTabChange, userName, onAdd
             </div>
           ))}
 
-          <div className="mt-auto mb-4 cursor-pointer text-white/70 hover:text-white transition-colors" onClick={handleLogout} title="Logout">
-            <Settings size={24} strokeWidth={1.5} />
+          <div className="mt-auto flex flex-col items-center gap-4 mb-4">
+             <div className="cursor-pointer text-white/70 hover:text-white transition-colors" title="Settings">
+               <Settings size={24} strokeWidth={1.5} />
+             </div>
+             
+             {/* Profile Card & Logout */}
+             <div className="relative group flex flex-col items-center gap-3 mt-2 border-t border-white/10 pt-4 w-full">
+                <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-semibold shadow-md" title={`${userProfile.name} (${userProfile.role})`}>
+                   {getInitials(userProfile.name)}
+                </div>
+                <div className="cursor-pointer text-rose-400 hover:text-rose-300 transition-colors mt-1" onClick={handleLogout} title="Logout">
+                   <LogOut size={22} strokeWidth={1.5} />
+                </div>
+             </div>
           </div>
         </div>
 
@@ -92,7 +121,7 @@ const SaaSDashboardLayout = ({ children, activeTab, onTabChange, userName, onAdd
 
               <div className="flex items-center gap-4 text-slate-500">
                 <Bell size={20} className="cursor-pointer hover:text-slate-800" />
-                <Settings size={20} className="cursor-pointer hover:text-slate-800" />
+                {/* Top-right settings/logout removed as requested */}
               </div>
 
               <div className="saas-v2-header-actions">

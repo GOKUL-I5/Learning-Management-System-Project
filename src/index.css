@@ -3418,3 +3418,22 @@ select option {
   font-size: 14px;
   font-family: inherit;
 }
+
+/* Completed Course Styles */
+.completed-course-card {
+  background-color: #f0f2f5 !important;
+  border: 1px solid #d1d5db !important;
+  color: #6b7280 !important;
+  opacity: 0.85;
+}
+.completed-course-card h4 {
+  color: #4b5563 !important;
+}
+.completed-course-badge {
+  background-color: #e5e7eb;
+  color: #4b5563;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: bold;
+}

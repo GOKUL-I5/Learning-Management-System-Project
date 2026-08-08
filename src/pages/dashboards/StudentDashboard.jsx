@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { logoutUser, uploadProfilePhoto, getStudentAssignments, getOrganizationCourses, subscribeToStudentAssignments, getOrganizationDetails, updateUserDoc, subscribeToFeeTransactions, updateStudentStatus, listenToOrganizationStatus, getCourseAssignments, logTransaction, subscribeToStudentSchedules, subscribeToUserProfile } from '../../firebase/services';
+import { logoutUser, uploadProfilePhoto, getStudentAssignments, getOrganizationCourses, subscribeToStudentAssignments, getOrganizationDetails, updateUserDoc, subscribeToFeeTransactions, updateStudentStatus, listenToOrganizationStatus, getCourseAssignments, logTransaction, subscribeToStudentSchedules, subscribeToUserProfile, subscribeToStudentCourseMaterials, subscribeToAttendanceHistoryByOrg, markMaterialAsViewed } from '../../firebase/services';
 import { LogOut, BookOpen, User, Users, Building, Mail, Key, Calendar, Clock, ExternalLink, FileText, Download, Video, Pencil, Check, X, CreditCard, DollarSign, Receipt, FolderOpen, Upload as UploadIcon, Settings, Bell, ChevronDown, Shield, UserCircle, MonitorPlay, Moon, Search } from 'lucide-react';
 import './StudentDashboard.css';
 
@@ -25,6 +25,9 @@ const StudentDashboard = () => {
   const [feeStatusMessage, setFeeStatusMessage] = useState('');
   const [courseRoster, setCourseRoster] = useState([]);
   const [mySchedules, setMySchedules] = useState([]);
+  const [courseMaterials, setCourseMaterials] = useState([]);
+  const [attendanceHistory, setAttendanceHistory] = useState([]);
+  const [isScheduleHistoryModalVisible, setIsScheduleHistoryModalVisible] = useState(false);
 
   const parseFirestoreDate = (timestamp) => {
     if (!timestamp) return 'N/A';
@@ -69,17 +72,53 @@ const StudentDashboard = () => {
   const [receipts, setReceipts] = useState([]);
   const [selectedBill, setSelectedBill] = useState(null);
   const [isBillModalVisible, setIsBillModalVisible] = useState(false);
+  const [previewMaterialUrl, setPreviewMaterialUrl] = useState(null);
+  const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const profileUploadRef = React.useRef(null);
 
-  const totalCourseFee = user?.courseFee || 28000;
+  const totalCourseFee = Number(user?.totalCourseFee || user?.courseFee || 28000);
   const trueTotalPaid = receipts.reduce((sum, r) => sum + (Number(r.totalAmount) || 0), 0);
-  const dynamicallyPaidFee = trueTotalPaid > 0 ? trueTotalPaid : (user?.paidFee || user?.paidAmount || 0);
+  const dynamicallyPaidFee = Number(trueTotalPaid > 0 ? trueTotalPaid : (user?.paidFee || user?.paidAmount || 0));
   const pendingFee = Math.max(0, totalCourseFee - dynamicallyPaidFee);
 
-  const filteredSchedules = mySchedules.filter(s => s.courseName?.toLowerCase().includes(searchQuery.toLowerCase()) || s.staffName?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const isClassTodayAndActive = (schedule) => {
+    try {
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+      if (schedule.daysOfWeek && Array.isArray(schedule.daysOfWeek) && !schedule.daysOfWeek.includes(today)) return false;
+
+      if (!schedule.classTiming) return true;
+      
+      const parts = schedule.classTiming.split('-');
+      if (parts.length < 2) return true;
+
+      const endStr = parts[1].trim();
+      const match = endStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+      if (!match) return true;
+      let [ , h, m, ampm ] = match;
+      h = parseInt(h, 10);
+      m = parseInt(m, 10);
+      if (ampm) {
+         if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+         if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+      }
+      const now = new Date();
+      const endTime = new Date();
+      endTime.setHours(h, m, 0, 0);
+
+      return now <= endTime;
+    } catch(e) {
+      return true;
+    }
+  };
+
+  const filteredSchedules = mySchedules.filter(s => {
+    const matchesSearch = s.courseName?.toLowerCase().includes(searchQuery.toLowerCase()) || s.staffName?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch && isClassTodayAndActive(s);
+  });
   const filteredContentObjects = contentObjects.filter(c => c.name?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredCourseMaterials = courseMaterials.filter(m => m.title?.toLowerCase().includes(searchQuery.toLowerCase()) || m.fileName?.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredReceipts = receipts.filter(r => r.billNumber?.toLowerCase().includes(searchQuery.toLowerCase()) || String(r.totalAmount).includes(searchQuery));
 
   const handlePayment = async () => {
@@ -91,6 +130,7 @@ const StudentDashboard = () => {
     let unsubscribeFees = null;
     let unsubscribeSchedules = null;
     let unsubscribeUser = null;
+    let unsubscribeCourseMaterials = null;
 
     if (user?.id) {
       unsubscribeUser = subscribeToUserProfile(user.id, (userData) => {
@@ -105,6 +145,9 @@ const StudentDashboard = () => {
       unsubscribeSchedules = subscribeToStudentSchedules(user.id, (data) => {
         setMySchedules(data);
       });
+      unsubscribeCourseMaterials = subscribeToStudentCourseMaterials(user.id, (data) => {
+        setCourseMaterials(data);
+      });
     }
     const savedTheme = localStorage.getItem('app-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -112,6 +155,7 @@ const StudentDashboard = () => {
       if (unsubscribeUser) unsubscribeUser();
       if (unsubscribeFees) unsubscribeFees();
       if (unsubscribeSchedules) unsubscribeSchedules();
+      if (unsubscribeCourseMaterials) unsubscribeCourseMaterials();
     };
   }, [user?.id, activeTab]);
 
@@ -142,8 +186,7 @@ const StudentDashboard = () => {
         }
       }
 
-      // Subscribe to real-time assignment updates
-      const unsubscribe = subscribeToStudentAssignments(user.organizationId, user.id, (assignments) => {
+      const unsubscribeAssignments = subscribeToStudentAssignments(user.organizationId, user.id, (assignments) => {
         if (assignments.length > 0) {
           const currentAssignment = assignments[0];
           setAssignment(currentAssignment);
@@ -157,10 +200,35 @@ const StudentDashboard = () => {
           }
         }
       });
+
+      const unsubscribeAttendance = subscribeToAttendanceHistoryByOrg(user.organizationId, (history) => {
+        setAttendanceHistory(history);
+      });
+
       // Cleanup subscription on unmount
-      return () => unsubscribe();
+      return () => {
+        unsubscribeAssignments();
+        unsubscribeAttendance();
+      };
     }).catch(console.error);
-  }, [user]);
+  }, [user?.organizationId, user?.id]);
+
+  const handleViewMaterial = async (fileObj, mode) => {
+    try {
+      if (user?.id && user?.name) {
+        await markMaterialAsViewed(fileObj.id, { id: user.id, name: user.name });
+      }
+    } catch (err) {
+      console.error("Error marking material as viewed:", err);
+    }
+    
+    if (mode === 'preview') {
+      setPreviewMaterialUrl(fileObj);
+      setIsPreviewModalVisible(true);
+    } else {
+      window.open(fileObj.fileUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   const [uploadingDoc, setUploadingDoc] = useState(null);
 
@@ -180,12 +248,17 @@ const StudentDashboard = () => {
       const data = await res.json();
       
       if (data.secure_url) {
-        const currentDocs = user.documents || {};
-        const updateData = { documents: { ...currentDocs, [docType]: data.secure_url } };
+        let updateData = {};
+        if (docType === 'studentPhotoUrl' || docType === 'identityDocUrl') {
+          updateData = { [docType]: data.secure_url };
+        } else {
+          const currentDocs = user.documents || {};
+          updateData = { documents: { ...currentDocs, [docType]: data.secure_url } };
+        }
         
         await updateUserDoc(user.id, updateData);
         
-        if (docType === 'idProofUrl') {
+        if (docType === 'idProofUrl' || docType === 'identityDocUrl') {
           await updateStudentStatus(user.id, user.statusHistory || [], user.currentStatus || 'Active', '[Aadhaar Redacted] Document Uploaded');
           await logTransaction('UPLOAD_ID_DOCUMENT', {
              token: '[Aadhaar Redacted]',
@@ -194,10 +267,10 @@ const StudentDashboard = () => {
           });
         }
 
-        const updatedUser = { ...user, documents: { ...currentDocs, [docType]: data.secure_url } };
+        const updatedUser = { ...user, ...updateData };
         setUser(updatedUser);
         localStorage.setItem('lms_user', JSON.stringify(updatedUser));
-        message.success(`${docType === 'profilePhotoUrl' ? 'Profile Photo' : 'ID Document'} uploaded successfully!`);
+        message.success(`${docType === 'studentPhotoUrl' ? 'Passport Photo' : 'ID Document'} uploaded successfully!`);
       } else {
         throw new Error(data.error?.message || 'Failed to upload image');
       }
@@ -207,6 +280,18 @@ const StudentDashboard = () => {
       setUploadingDoc(null);
     }
     return false; // Prevent default antd upload behavior
+  };
+
+  const handleDismissNotification = async (notificationId) => {
+    try {
+      const currentNotifications = user.notifications || [];
+      const updatedNotifications = currentNotifications.map(notif => 
+        notif.id === notificationId ? { ...notif, read: true } : notif
+      );
+      await updateUserDoc(user.id, { notifications: updatedNotifications });
+    } catch (error) {
+      console.error("Failed to dismiss notification", error);
+    }
   };
 
   const handleSaveName = async () => {
@@ -270,9 +355,9 @@ This is an automatically generated receipt.
       }} />
       {/* Sidebar Navigation */}
       <aside className="uxer-sidebar">
-        <div className="uxer-sidebar-logo">
-          <div className="logo-icon"></div>
-          <span style={{ fontSize: '24px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px' }}>Student</span>
+        <div className="uxer-sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px' }}>
+          {logoUrl ? <img src={logoUrl} alt="Org Logo" style={{ maxHeight: '32px', maxWidth: '32px', objectFit: 'contain' }} /> : <div className="logo-icon"></div>}
+          <span style={{ fontSize: '18px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.organizationName || 'Student Portal'}</span>
         </div>
         
         <div className="uxer-sidebar-menu">
@@ -310,17 +395,7 @@ This is an automatically generated receipt.
       <main className="uxer-main">
         <header className="uxer-header">
           <div className="uxer-header-left">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {logoUrl ? (
-                <img src={logoUrl} alt="Organization Logo" style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '4px' }} />
-              ) : (
-                <div style={{ width: '40px', height: '40px', borderRadius: '4px', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                  {(user?.organizationName || 'O').charAt(0)}
-                </div>
-              )}
-              <div className="org-text" style={{ textTransform: 'uppercase', margin: 0 }}>{user?.organizationName || 'Organization'}</div>
-            </div>
-            <h1>Student Portal</h1>
+            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#111', margin: 0 }}>Student Portal</h1>
           </div>
           <div className="uxer-header-right">
             <div className="uxer-search">
@@ -382,9 +457,23 @@ This is an automatically generated receipt.
                   <div className="uxer-stat-card">
                     <div className="uxer-stat-title">ATTENDANCE</div>
                     <div className="uxer-stat-content" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
-                      <div className="uxer-stat-value">92%</div>
+                      <div className="uxer-stat-value">
+                        {(() => {
+                          const relevantClasses = attendanceHistory.filter(h => h.courseName === user?.course);
+                          if (relevantClasses.length === 0) return '100%';
+                          let attended = 0;
+                          relevantClasses.forEach(c => {
+                            const studentRecord = c.studentAttendance?.find(s => s.studentId === user?.id);
+                            if (studentRecord && studentRecord.status === 'P') {
+                              attended++;
+                            }
+                          });
+                          const percentage = Math.round((attended / relevantClasses.length) * 100);
+                          return `${percentage}%`;
+                        })()}
+                      </div>
                       <div className="uxer-stat-badge">
-                        <span className="uxer-stat-badge-text" style={{ textAlign: 'left', marginLeft: 0 }}>This Month</span>
+                        <span className="uxer-stat-badge-text" style={{ textAlign: 'left', marginLeft: 0 }}>Current Course</span>
                       </div>
                     </div>
                   </div>
@@ -469,8 +558,8 @@ This is an automatically generated receipt.
                       <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Calendar style={{ width: '20px', height: '20px', color: 'var(--text-secondary)' }} /> Today's Classes
                       </h3>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        View Timetable <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
+                      <div onClick={() => setIsScheduleHistoryModalVisible(true)} style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        View Schedule / History <ChevronDown style={{ width: '16px', height: '16px', transform: 'rotate(-90deg)' }} />
                       </div>
                     </div>
 
@@ -548,143 +637,6 @@ This is an automatically generated receipt.
             </div>
           )}
 
-        {activeTab === 'fee' && (
-          <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-            <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-              <CreditCard className="w-5 h-5 text-indigo-500" /> Fee Management
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col justify-center text-center">
-                <div className="text-sm text-slate-500 uppercase tracking-wider font-semibold mb-1">Total Fee</div>
-                <div className="text-2xl font-bold text-slate-800">Rs. {totalCourseFee.toLocaleString('en-IN')}</div>
-              </div>
-              <div className="bg-teal-50 p-4 rounded-xl border border-teal-100 flex flex-col justify-center text-center">
-                <div className="text-sm text-teal-600 uppercase tracking-wider font-semibold mb-1">Paid Fee</div>
-                <div className="text-2xl font-bold text-teal-800">Rs. {dynamicallyPaidFee.toLocaleString('en-IN')}</div>
-              </div>
-              <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex flex-col justify-center text-center">
-                <div className="text-sm text-red-600 uppercase tracking-wider font-semibold mb-1">Pending Fee</div>
-                <div className="text-2xl font-bold text-red-800">Rs. {pendingFee.toLocaleString('en-IN')}</div>
-              </div>
-            </div>
-
-            {/* Paid Bills History */}
-            <div className="mt-8">
-              <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-indigo-500" />
-                My Digital Bills
-              </h3>
-              
-              {(() => {
-                const legacyAmount = user?.paidFee || user?.paidAmount || 0;
-                
-                let displayLedger = receipts.map(bill => ({
-                  receiptId: bill.billNumber || bill.id,
-                  date: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleDateString(),
-                  time: new Date(bill.paymentDate || bill.timestamp?.seconds * 1000).toLocaleTimeString(),
-                  amountPaid: bill.totalAmount,
-                  status: 'Paid',
-                  description: bill.remarks || 'Fee Payment'
-                }));
-                
-                if (displayLedger.length === 0 && legacyAmount > 0) {
-                  displayLedger = [{
-                    receiptId: "LEGACY-REC",
-                    date: user?.dateOfJoining || "Initial",
-                    time: "",
-                    amountPaid: legacyAmount,
-                    status: "Initial Payment",
-                    description: "Prior payment records"
-                  }];
-                }
-                
-                if (displayLedger.length === 0) {
-                  return (
-                    <div className="text-center p-6 bg-slate-50 rounded-xl border border-slate-100 text-slate-500 italic">
-                      <Receipt className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                      <p className="text-lg">No fee transactions recorded.</p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="flex flex-col gap-4">
-                    {displayLedger.map((bill, idx) => (
-                      <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
-                        <div className="flex-1 w-full">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-bold text-slate-800 text-lg">{bill.receiptId || bill.billId}</span>
-                            <span className="text-xs font-semibold bg-green-100 text-green-700 px-2 py-1 rounded">{bill.status}: ₹{bill.amountPaid || bill.amount}</span>
-                            <span className="text-xs text-slate-500">{bill.date} {bill.time || ''}</span>
-                          </div>
-                          <div className="text-sm text-slate-600 font-medium">{bill.description || "Fee Payment"}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'documents' && (
-          <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-            <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
-              <FolderOpen className="w-5 h-5 text-indigo-500" /> Document Center
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl" style={{ padding: '20px', textAlign: 'center' }}>
-                <h3 className="text-slate-800 font-semibold mb-4 text-lg">Profile Photo Upload</h3>
-                <div className="mb-4">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${user?.documents?.profilePhotoUrl ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {user?.documents?.profilePhotoUrl ? 'Uploaded' : 'Pending'}
-                  </span>
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <input type="file" id="profile-upload" style={{ display: 'none' }} onChange={(e) => { 
-                    if(e.target.files && e.target.files.length > 0) {
-                      const confirmChange = window.confirm("Are you sure you want to change your profile picture?");
-                      if (!confirmChange) {
-                        e.target.value = null;
-                        return;
-                      }
-                      handleDocumentUpload(e.target.files[0], 'profilePhotoUrl');
-                    }
-                  }} accept="image/*" />
-                  <label htmlFor="profile-upload" className="block w-full py-3 px-6 transition-colors rounded-lg font-bold text-center shadow-sm" style={{ backgroundColor: 'var(--accent-royal-purple)', color: '#ffffff', border: '2px solid var(--accent-royal-purple)', opacity: uploadingDoc === 'profilePhotoUrl' ? 0.9 : 1, cursor: 'pointer' }}>
-                    {uploadingDoc === 'profilePhotoUrl' ? 'Uploading...' : (user?.documents?.profilePhotoUrl ? 'Update Profile Photo' : 'Upload Profile Photo')}
-                  </label>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-xl" style={{ padding: '20px', textAlign: 'center' }}>
-                <h3 className="text-slate-800 font-semibold mb-4 text-lg">Aadhaar / ID Card Upload</h3>
-                <div className="mb-4">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${user?.documents?.idProofUrl ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {user?.documents?.idProofUrl ? 'Uploaded' : 'Pending'}
-                  </span>
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <input type="file" id="id-upload" style={{ display: 'none' }} onChange={(e) => { 
-                    if(e.target.files && e.target.files.length > 0) {
-                      const confirmChange = window.confirm("Are you sure you want to change your Aadhaar/ID document?");
-                      if (!confirmChange) {
-                        e.target.value = null;
-                        return;
-                      }
-                      handleDocumentUpload(e.target.files[0], 'idProofUrl');
-                    }
-                  }} accept="image/*,application/pdf" />
-                  <label htmlFor="id-upload" className="block w-full py-3 px-6 transition-colors rounded-lg font-bold text-center shadow-sm" style={{ backgroundColor: 'var(--accent-royal-purple)', color: '#ffffff', border: '2px solid var(--accent-royal-purple)', opacity: uploadingDoc === 'idProofUrl' ? 0.9 : 1, cursor: 'pointer' }}>
-                    {uploadingDoc === 'idProofUrl' ? 'Uploading...' : (user?.documents?.idProofUrl ? 'Update Aadhaar/ID' : 'Upload Aadhaar/ID')}
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'course' && (
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Course Materials</h2>
@@ -700,7 +652,7 @@ This is an automatically generated receipt.
                   </div>
                 </div>
 
-                {(courseContentUrl || filteredContentObjects.length > 0) ? (
+                {(courseContentUrl || filteredCourseMaterials.length > 0) ? (
                   <div className="flex flex-col gap-4">
                     {courseContentUrl && (
                       <button 
@@ -712,23 +664,117 @@ This is an automatically generated receipt.
                       </button>
                     )}
                     
-                    {filteredContentObjects.length > 0 && (
-                      <div className="mt-4">
-                        <div className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 border-b border-slate-100 pb-2">Attached Files</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {filteredContentObjects.map((fileObj, idx) => (
-                            <button
-                              key={idx}
-                              onClick={() => window.open(fileObj.url, '_blank')}
-                              className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-lg font-bold cursor-pointer shadow-sm w-full text-left transition-colors hover:bg-slate-50"
-                            >
-                              <div className="flex items-center gap-3 overflow-hidden">
-                                <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{fileObj.name}</span>
+                    {filteredCourseMaterials.length > 0 && (
+                      <div style={{ marginTop: '24px' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                          Attached Materials
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+                          {filteredCourseMaterials.map((fileObj, idx) => {
+                            const isPdf = fileObj.fileUrl?.toLowerCase().includes('.pdf');
+                            const isVideo = fileObj.fileUrl?.toLowerCase().includes('.mp4') || fileObj.fileUrl?.toLowerCase().includes('.webm');
+                            return (
+                              <div
+                                key={fileObj.id || idx}
+                                style={{
+                                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0))',
+                                  backdropFilter: 'blur(10px)',
+                                  WebkitBackdropFilter: 'blur(10px)',
+                                  border: '1px solid rgba(255, 255, 255, 0.18)',
+                                  boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.05)',
+                                  borderRadius: '16px',
+                                  padding: '20px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '16px',
+                                  transition: 'transform 0.2s, box-shadow 0.2s',
+                                  backgroundColor: 'var(--card-bg)'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.transform = 'translateY(-4px)';
+                                  e.currentTarget.style.boxShadow = '0 12px 40px 0 rgba(0, 0, 0, 0.1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = 'translateY(0)';
+                                  e.currentTarget.style.boxShadow = '0 8px 32px 0 rgba(0, 0, 0, 0.05)';
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                                  <div style={{ padding: '12px', borderRadius: '12px', background: isPdf ? 'rgba(239, 68, 68, 0.1)' : isVideo ? 'rgba(59, 130, 246, 0.1)' : 'rgba(99, 102, 241, 0.1)', color: isPdf ? '#ef4444' : isVideo ? '#3b82f6' : '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {isVideo ? <Video size={24} /> : <FileText size={24} />}
+                                  </div>
+                                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                                    <h4 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {fileObj.title || fileObj.fileName}
+                                    </h4>
+                                    {fileObj.description && (
+                                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                        {fileObj.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: 'auto' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Uploaded By</span>
+                                    <span style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: '600' }}>{fileObj.staffName || 'Faculty'}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
+                                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 'bold' }}>Date</span>
+                                    <span style={{ fontSize: '13px', color: 'var(--text-main)' }}>{parseFirestoreDate(fileObj.timestamp)}</span>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                                  <button
+                                    onClick={() => handleViewMaterial(fileObj, 'preview')}
+                                    style={{
+                                      flex: 1,
+                                      padding: '10px',
+                                      borderRadius: '8px',
+                                      border: '1px solid var(--border-color)',
+                                      background: 'var(--card-bg)',
+                                      color: 'var(--text-main)',
+                                      fontWeight: 'bold',
+                                      fontSize: '13px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '6px',
+                                      transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--card-bg)'; }}
+                                  >
+                                    👁️ View Document
+                                  </button>
+                                  <button
+                                    onClick={() => handleViewMaterial(fileObj, 'download')}
+                                    style={{
+                                      flex: 1,
+                                      padding: '10px',
+                                      borderRadius: '8px',
+                                      border: 'none',
+                                      background: 'var(--uxer-primary)',
+                                      color: '#fff',
+                                      fontWeight: 'bold',
+                                      fontSize: '13px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '6px',
+                                      transition: 'background 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                                    onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                                  >
+                                    <Download size={16} /> Download
+                                  </button>
+                                </div>
                               </div>
-                              <Download className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                            </button>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )}
@@ -773,6 +819,179 @@ This is an automatically generated receipt.
           </div>
         )}
 
+        {activeTab === 'fee' && (
+          <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
+              <CreditCard className="w-5 h-5 text-indigo-500" /> Fee Management
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col justify-center text-center">
+                <div className="text-sm text-slate-500 uppercase tracking-wider font-semibold mb-1">Total Fee</div>
+                <div className="text-2xl font-bold text-slate-800">Rs. {totalCourseFee.toLocaleString('en-IN')}</div>
+              </div>
+              <div className="bg-teal-50 p-4 rounded-xl border border-teal-100 flex flex-col justify-center text-center">
+                <div className="text-sm text-teal-600 uppercase tracking-wider font-semibold mb-1">Paid Fee</div>
+                <div className="text-2xl font-bold text-teal-800">Rs. {dynamicallyPaidFee.toLocaleString('en-IN')}</div>
+              </div>
+              <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex flex-col justify-center text-center">
+                <div className="text-sm text-red-600 uppercase tracking-wider font-semibold mb-1">Pending Fee</div>
+                <div className="text-2xl font-bold text-red-800">Rs. {pendingFee.toLocaleString('en-IN')}</div>
+              </div>
+            </div>
+
+            {/* Paid Bills History */}
+            <div className="mt-8">
+              <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-indigo-500" />
+                My Digital Bills
+              </h3>
+              
+              {(() => {
+                const legacyAmount = user?.paidFee || user?.paidAmount || 0;
+                
+                let displayLedger = receipts.map(bill => ({
+                  rawBill: bill,
+                  receiptId: bill.billCode || bill.billNumber || bill.id,
+                  date: bill.date || (bill.paymentDate ? new Date(bill.paymentDate).toLocaleDateString() : (bill.timestamp ? new Date(bill.timestamp.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString())),
+                  time: bill.paymentDate ? new Date(bill.paymentDate).toLocaleTimeString() : (bill.timestamp ? new Date(bill.timestamp.seconds * 1000).toLocaleTimeString() : ''),
+                  amountPaid: bill.amountPaid || bill.amount || bill.totalAmount || 0,
+                  paymentMode: bill.paymentMode === 'Split' 
+                    ? `Split (Cash: ₹${bill.cashAmount || bill.paymentSplit?.cash || 0} | UPI: ₹${bill.gpayAmount || bill.paymentSplit?.upi || 0})` 
+                    : (bill.paymentMode || 'Online / Cash'),
+                  description: bill.remarks || 'Fee Payment'
+                }));
+                
+                if (displayLedger.length === 0 && legacyAmount > 0) {
+                  displayLedger = [{
+                    rawBill: { billCode: "LEGACY-REC", amountPaid: legacyAmount, paymentMode: "Legacy", date: user?.dateOfJoining },
+                    receiptId: "LEGACY-REC",
+                    date: user?.dateOfJoining || "Initial",
+                    time: "",
+                    amountPaid: legacyAmount,
+                    paymentMode: "Initial Payment",
+                    description: "Prior payment records"
+                  }];
+                }
+                
+                if (displayLedger.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '40px', backgroundColor: 'var(--bg-hover)', borderRadius: '12px', border: '1px dashed var(--border-color)', color: 'var(--text-secondary)' }}>
+                      <Receipt style={{ width: '48px', height: '48px', color: 'var(--border-color)', margin: '0 auto 12px auto' }} />
+                      <p style={{ fontSize: '16px', margin: 0 }}>No fee transactions recorded.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {displayLedger.map((bill, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', gap: '16px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '18px', color: 'var(--text-main)' }}>{bill.receiptId}</span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534', padding: '4px 8px', borderRadius: '4px' }}>Paid: ₹{bill.amountPaid}</span>
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Calendar style={{ width: '14px', height: '14px' }}/> {bill.date} {bill.time}
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => { setSelectedBill(bill.rawBill); setIsBillModalVisible(true); }}
+                          style={{ padding: '10px 20px', backgroundColor: 'var(--indigo-50, #eef2ff)', color: 'var(--indigo-600, #4f46e5)', border: '1px solid var(--indigo-100, #e0e7ff)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#e0e7ff'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#eef2ff'; }}
+                        >
+                          <Receipt size={16} /> 👁️ View Digital Receipt
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'documents' && (
+          <div style={{ backgroundColor: 'var(--card-bg)', borderRadius: '16px', padding: '24px', border: '1px solid var(--border-color)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+            <h3 style={{ margin: '0 0 24px 0', fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', color: 'var(--text-main)' }}>
+              <FolderOpen size={24} style={{ color: '#2563eb' }} /> Document Center
+            </h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+              
+              {/* Card 1: Passport Photo */}
+              <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', transition: 'transform 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 8px 0' }}>Student Passport Photo</h3>
+                <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 20px 0' }}>Upload a clear photo for your identity and portal profile.</p>
+                
+                {user?.studentPhotoUrl ? (
+                  <div style={{ marginBottom: '20px', position: 'relative' }}>
+                    <img src={user.studentPhotoUrl} alt="Passport Photo" style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #2563eb', padding: '2px', backgroundColor: '#fff' }} />
+                    <span style={{ position: 'absolute', bottom: '-10px', left: '50%', transform: 'translateX(-50%)', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                      Uploaded ✓
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ width: '100px', height: '100px', borderRadius: '50%', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
+                      <User size={40} color="#94a3b8" />
+                    </div>
+                    <span style={{ display: 'inline-block', marginTop: '12px', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fef3c7', color: '#b45309' }}>
+                      Pending Upload
+                    </span>
+                  </div>
+                )}
+                
+                <div style={{ width: '100%', marginTop: 'auto' }}>
+                  <input type="file" id="photo-upload" style={{ display: 'none' }} onChange={(e) => { 
+                    if(e.target.files && e.target.files.length > 0) handleDocumentUpload(e.target.files[0], 'studentPhotoUrl');
+                  }} accept="image/*" />
+                  <label htmlFor="photo-upload" style={{ display: 'block', width: '100%', padding: '12px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'opacity 0.2s', opacity: uploadingDoc === 'studentPhotoUrl' ? 0.7 : 1 }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>
+                    {uploadingDoc === 'studentPhotoUrl' ? 'Uploading...' : (user?.studentPhotoUrl ? 'Update Photo' : 'Upload Photo')}
+                  </label>
+                </div>
+              </div>
+
+              {/* Card 2: Identity Document */}
+              <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', transition: 'transform 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+                <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 8px 0' }}>Identity Document</h3>
+                <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 20px 0' }}>Upload your ID Card or Aadhaar document for verification.</p>
+                
+                {(user?.identityDocUrl || user?.documents?.idProofUrl) ? (
+                  <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '80px', height: '80px', borderRadius: '12px', backgroundColor: '#eff6ff', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <FileText size={32} color="#2563eb" />
+                    </div>
+                    <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534' }}>
+                      Uploaded & Saved ✓
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '80px', height: '80px', borderRadius: '12px', backgroundColor: '#f1f5f9', border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <FileText size={32} color="#94a3b8" />
+                    </div>
+                    <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fef3c7', color: '#b45309' }}>
+                      Pending Upload
+                    </span>
+                  </div>
+                )}
+                
+                <div style={{ width: '100%', marginTop: 'auto' }}>
+                  <input type="file" id="id-upload" style={{ display: 'none' }} onChange={(e) => { 
+                    if(e.target.files && e.target.files.length > 0) handleDocumentUpload(e.target.files[0], 'identityDocUrl');
+                  }} accept="image/*,application/pdf" />
+                  <label htmlFor="id-upload" style={{ display: 'block', width: '100%', padding: '12px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'opacity 0.2s', opacity: uploadingDoc === 'identityDocUrl' ? 0.7 : 1 }} onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'} onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>
+                    {uploadingDoc === 'identityDocUrl' ? 'Uploading...' : ((user?.identityDocUrl || user?.documents?.idProofUrl) ? 'Update ID Document' : 'Upload ID Document')}
+                  </label>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="rounded-2xl p-6 border shadow-sm w-full" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <h3 className="m-0 mb-6 text-lg font-bold flex items-center gap-2 border-b pb-3" style={{ borderColor: 'var(--border-color)' }}>
@@ -813,104 +1032,275 @@ This is an automatically generated receipt.
                 <label className="settings-form-label">Date of Birth</label>
                 <input type="date" name="dob" defaultValue={user?.dob} required  className="saas-v3-form-input"/>
               </div>
-              <div className="mt-4">
-                <button type="submit" className="settings-save-btn">Save Changes</button>
-              </div>
-            </form>
+                <div className="mt-4">
+                  <button type="submit" className="settings-save-btn">Save Changes</button>
+                </div>
+              </form>
+
           </div>
         )}
-        </div>
-        
+
         {/* Digital Bill Modal */}
         {isBillModalVisible && selectedBill && (
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div id="receipt-print-area" style={{ background: '#fff', border: '1px solid #ddd', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', position: 'relative' }}>
+              <button 
+                onClick={() => setIsBillModalVisible(false)}
+                style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', color: '#94a3b8', zIndex: 10 }}
+                className="no-print"
+              >
+                <X size={24} />
+              </button>
               
-              {/* Elegant Bill Header */}
-              <div style={{ padding: '24px', backgroundColor: 'var(--blue-50, #eff6ff)', borderBottom: '2px dashed var(--border-color, #e2e8f0)', textAlign: 'center', position: 'relative' }}>
+              <div style={{ textAlign: 'center', borderBottom: '2px solid #eee', paddingBottom: '24px', marginBottom: '24px', marginTop: '16px' }}>
+                {logoUrl && <img src={logoUrl} alt="Organization Logo" style={{ maxHeight: '60px', width: 'auto', objectFit: 'contain', marginBottom: '16px' }} />}
+                <h1 style={{ margin: 0, color: 'var(--uxer-primary)', fontSize: '24px', fontWeight: 'bold' }}>{user?.organizationName || 'Organization'}</h1>
+                <p style={{ margin: '8px 0 0 0', color: '#64748b', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>Fee Payment Receipt</p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                  <span style={{ fontWeight: '600', color: '#64748b' }}>Receipt Number:</span>
+                  <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{selectedBill.billCode || selectedBill.billNumber || 'N/A'}</span>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                  <span style={{ fontWeight: '600', color: '#64748b' }}>Date:</span>
+                  <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{selectedBill.date || (selectedBill.paymentDate ? new Date(selectedBill.paymentDate).toLocaleDateString() : (selectedBill.timestamp ? new Date(selectedBill.timestamp.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString()))}</span>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                  <span style={{ fontWeight: '600', color: '#64748b' }}>Student Name:</span>
+                  <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{user?.name || 'N/A'}</span>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                  <span style={{ fontWeight: '600', color: '#64748b' }}>Course:</span>
+                  <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{user?.course || 'N/A'}</span>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                  <span style={{ fontWeight: '600', color: '#64748b' }}>Payment Mode:</span>
+                  <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{selectedBill.paymentMode === 'Split' ? `Split (Cash: ₹${selectedBill.cashAmount || selectedBill.paymentSplit?.cash || 0} | UPI: ₹${selectedBill.gpayAmount || selectedBill.paymentSplit?.upi || 0})` : (selectedBill.paymentMode || 'Online / Cash')}</span>
+                </div>
+              </div>
+              
+              <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '2px dashed #cbd5e1', display: 'flex', justifyContent: 'space-between', fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>
+                <span>Total Amount Paid:</span>
+                <span style={{ color: 'var(--green-600)' }}>₹{selectedBill.amountPaid || selectedBill.amount || selectedBill.totalAmount || 0}</span>
+              </div>
+
+              {selectedBill.remarks && selectedBill.remarks !== 'Fee Payment' && (
+                <div style={{ marginTop: '20px', fontSize: '14px', color: '#64748b', fontStyle: 'italic', textAlign: 'center', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                  Note: {selectedBill.remarks}
+                </div>
+              )}
+              
+              <div style={{ marginTop: '30px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
+                This is a computer-generated receipt.
+              </div>
+
+              <div className="no-print" style={{ marginTop: '30px', display: 'flex', justifyContent: 'center' }}>
                 <button 
-                  onClick={() => setIsBillModalVisible(false)}
-                  style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px' }}
+                  onClick={() => {
+                    const originalTitle = document.title;
+                    document.title = `Receipt_${selectedBill.billCode || selectedBill.id || 'N_A'}`;
+                    window.print();
+                    document.title = originalTitle;
+                  }}
+                  style={{ width: '100%', padding: '14px 20px', backgroundColor: 'var(--uxer-primary)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
                 >
+                  <Download size={20} /> Download PDF Receipt
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* Real-time Fee Reminder Notification Pop-Up */}
+        {(() => {
+          const unreadReminder = (user?.notifications || []).find(n => !n.read && n.type === 'FEE_REMINDER');
+          if (!unreadReminder) return null;
+          
+          return (
+            <div className="student-notification-popup">
+              <div className="popup-icon">
+                <Bell size={24} />
+              </div>
+              <div className="popup-content">
+                <h4>{unreadReminder.title}</h4>
+                <p>{unreadReminder.message}</p>
+                <div className="popup-meta">
+                  <span>{unreadReminder.date} at {unreadReminder.time}</span>
+                </div>
+              </div>
+              <button 
+                className="popup-close" 
+                onClick={() => handleDismissNotification(unreadReminder.id)}
+                title="Dismiss"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* View Schedule History Modal */}
+        {isScheduleHistoryModalVisible && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="saas-v3-modal-card" style={{ width: '90%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc' }}>
+                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: 'var(--indigo-900)' }}>Class & Attendance History</h2>
+                <button onClick={() => setIsScheduleHistoryModalVisible(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                   <X className="w-6 h-6 text-slate-400 hover:text-slate-700" />
                 </button>
-                
-                {logoUrl && <img src={logoUrl} alt="Logo" style={{ height: '48px', objectFit: 'contain', margin: '0 auto 12px' }} />}
-                <h2 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: 'bold', color: 'var(--indigo-900, #312e81)' }}>{user?.organizationName}</h2>
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary, #64748b)' }}>Official Fee Receipt</p>
               </div>
+              <div style={{ padding: '24px', overflowY: 'auto', flex: 1, backgroundColor: '#f1f5f9' }}>
+                {(() => {
+                  const filteredHistory = attendanceHistory.filter(h => {
+                    const matchCourseName = h.courseName && user?.course && h.courseName.toLowerCase() === user.course.toLowerCase();
+                    const matchCourseId = h.courseId && user?.courseId && String(h.courseId) === String(user.courseId);
+                    const matchStudentInArray = h.studentAttendance && h.studentAttendance.some(s => String(s.studentId) === String(user?.id) || (s.enrollmentNo && String(s.enrollmentNo) === String(user?.enrollmentNo)));
+                    
+                    return matchCourseName || matchCourseId || matchStudentInArray;
+                  }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-              {/* Bill Details */}
-              <div style={{ padding: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                  if (filteredHistory.length === 0) {
+                    return (
+                      <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                        No class history found for your account.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#e2e8f0', color: '#334155' }}>
+                          <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Date & Time</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'bold' }}>Session Topic / Subject</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 'bold' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredHistory.map((record, idx) => {
+                          const studentRec = record.studentAttendance?.find(s => String(s.studentId) === String(user?.id) || (s.enrollmentNo && String(s.enrollmentNo) === String(user?.enrollmentNo)));
+                          const isPresent = studentRec && (studentRec.status === 'P' || studentRec.status === 'Present');
+                          const isAbsent = studentRec && (studentRec.status === 'A' || studentRec.status === 'Absent');
+                          
+                          let statusBadge = (
+                            <span style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fef08a', color: '#854d0e', display: 'inline-block' }}>
+                              Conducted
+                            </span>
+                          );
+                          
+                          if (isPresent) {
+                            statusBadge = (
+                              <span style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#166534', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                Present ✓
+                              </span>
+                            );
+                          } else if (isAbsent) {
+                            statusBadge = (
+                              <span style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: '#fee2e2', color: '#991b1b', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                Absent ✗
+                              </span>
+                            );
+                          }
+
+                          return (
+                            <tr key={record.id || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '16px', fontSize: '14px', color: '#334155', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontWeight: 'bold' }}>{new Date(record.date).toLocaleDateString()}</div>
+                                {record.time && <div style={{ fontSize: '12px', color: '#64748b' }}>{record.time}</div>}
+                              </td>
+                              <td style={{ padding: '16px', fontSize: '14px', color: '#0f172a' }}>
+                                {record.sessionTopics || record.subject || 'No topics listed'}
+                              </td>
+                              <td style={{ padding: '16px', textAlign: 'center' }}>
+                                {statusBadge}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        </div>
+
+        {isPreviewModalVisible && previewMaterialUrl && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="custom-modal-viewport-card" style={{ backgroundColor: '#fff', borderRadius: '12px', width: '90%', maxWidth: '1000px', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+              
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--border-color)', backgroundColor: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '8px', backgroundColor: 'var(--uxer-primary)', color: '#fff' }}>
+                    <FileText size={20} />
+                  </div>
                   <div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary, #64748b)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>Receipt Number</div>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold', fontFamily: 'monospace' }}>{selectedBill.billNumber}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary, #64748b)', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>Date</div>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold' }}>{selectedBill.timestamp ? new Date(selectedBill.timestamp.seconds * 1000).toLocaleDateString() : 'N/A'}</div>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ color: 'var(--text-secondary, #64748b)' }}>Student Name</span>
-                    <span style={{ fontWeight: 'bold' }}>{user?.name}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ color: 'var(--text-secondary, #64748b)' }}>Enrollment No.</span>
-                    <span style={{ fontWeight: 'bold' }}>{user?.enrollmentNo || user?.id.substring(0, 8)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ color: 'var(--text-secondary, #64748b)' }}>Course</span>
-                    <span style={{ fontWeight: 'bold' }}>{selectedBill.course || user?.course}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                    <span style={{ color: 'var(--text-secondary, #64748b)' }}>Received By (Cashier)</span>
-                    <span style={{ fontWeight: 'bold' }}>{selectedBill.cashier || 'Admin'}</span>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)', maxWidth: '600px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {previewMaterialUrl.title || previewMaterialUrl.fileName || 'Document Preview'}
+                    </h2>
+                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                      {previewMaterialUrl.fileUrl?.split('.').pop() || 'DOCUMENT'}
+                    </span>
                   </div>
                 </div>
-
-                {/* Payment Split */}
-                <div style={{ backgroundColor: 'var(--bg-hover, #f8fafc)', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
-                  <h4 style={{ margin: '0 0 12px', fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)' }}>Payment Breakdown</h4>
-                  {selectedBill.paymentSplit?.cash > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>Cash</span><span>₹{selectedBill.paymentSplit.cash}</span>
-                    </div>
-                  )}
-                  {selectedBill.paymentSplit?.upi > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>UPI / GPay</span><span>₹{selectedBill.paymentSplit.upi}</span>
-                    </div>
-                  )}
-                  {selectedBill.paymentSplit?.card > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>Card</span><span>₹{selectedBill.paymentSplit.card}</span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color, #e2e8f0)', fontWeight: 'bold', fontSize: '18px', color: 'var(--green-600, #16a34a)' }}>
-                    <span>Total Amount Paid</span><span>₹{selectedBill.totalAmount}</span>
-                  </div>
-                </div>
-
-                {selectedBill.remarks && (
-                  <div style={{ fontSize: '13px', color: 'var(--text-secondary, #64748b)', fontStyle: 'italic', textAlign: 'center' }}>
-                    "{selectedBill.remarks}"
-                  </div>
-                )}
-              </div>
-
-              {/* Print Action */}
-              <div style={{ padding: '16px 24px', backgroundColor: 'var(--bg-hover, #f8fafc)', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', gap: '12px' }}>
-                <button 
-                  onClick={() => handleDownloadReceipt(selectedBill)}
-                  style={{ flex: 1, padding: '12px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                >
-                  <Download className="w-4 h-4" /> Download PDF
+                <button onClick={() => { setIsPreviewModalVisible(false); setPreviewMaterialUrl(null); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', borderRadius: '8px', transition: 'all 0.2s' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#e2e8f0'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
+                  <X size={24}/>
                 </button>
               </div>
+
+              {/* Body */}
+              <div style={{ flex: 1, backgroundColor: '#e2e8f0', position: 'relative' }}>
+                {(() => {
+                  const url = previewMaterialUrl.fileUrl;
+                  if (!url) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>Invalid document link</div>;
+                  
+                  const ext = url.split('.').pop().toLowerCase();
+                  const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+                  const isNative = isImage || ext === 'pdf';
+                  const viewerUrl = isNative ? url : `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
+
+                  if (isImage) {
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: '24px', boxSizing: 'border-box' }}>
+                        <img src={url} alt="Document" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <iframe src={viewerUrl} width="100%" height="100%" style={{ border: 'none', display: 'block' }} title="Document Preview" />
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border-color)', backgroundColor: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Uploaded by: {previewMaterialUrl.staffName || 'Faculty'}
+                </span>
+                <button 
+                  onClick={() => window.open(previewMaterialUrl.fileUrl, '_blank', 'noopener,noreferrer')}
+                  style={{ padding: '10px 24px', backgroundColor: 'var(--uxer-primary)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'opacity 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                >
+                  <Download size={18} /> Download Original File
+                </button>
+              </div>
+
             </div>
           </div>
         )}

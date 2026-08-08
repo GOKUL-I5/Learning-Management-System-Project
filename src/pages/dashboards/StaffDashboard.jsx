@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { createStudent, logoutUser, getOrganizationStudents, subscribeToOrganizationStudents, deleteUserDoc, updateUserDoc, getStaffAssignments, updateCourseAssignment, getOrganizationDetails, saveAttendanceHistory, getAttendanceHistoryByFaculty, createReceipt, listenToOrganizationStatus, logTransaction, getOrganizationCourses, addStudentMarks, uploadCourseMaterial, addDynamicStudentMarks, getCourseMaterialsForStaff } from '../../firebase/services';
-import { LogOut, Calendar as CalendarIcon, Clock, Users, BookOpen, ChevronRight, Upload as UploadIcon, FileText, ClipboardList, Pencil, Download, CheckCircle, XCircle, GraduationCap, UploadCloud, FileSpreadsheet, Calendar, Video, ArrowLeft, Mic, MicOff, Monitor, Paperclip, CheckCircle2, Trash2, ChevronDown, UserCheck, AlertCircle, Banknote, Search, Award, Filter, ArrowDownUp, Moon, Bell, X, Eye, TrendingUp, TrendingDown } from 'lucide-react';
+import { createStudent, logoutUser, getOrganizationStudents, subscribeToOrganizationStudents, deleteUserDoc, updateUserDoc, getStaffAssignments, subscribeToStaffAssignments, updateCourseAssignment, getOrganizationDetails, saveAttendanceHistory, getAttendanceHistoryByFaculty, createReceipt, listenToOrganizationStatus, logTransaction, getOrganizationCourses, addStudentMarks, uploadCourseMaterial, addDynamicStudentMarks, getCourseMaterialsForStaff, deleteCourseMaterial, updateCourseMaterial } from '../../firebase/services';
+import { LogOut, Calendar as CalendarIcon, Clock, Users, BookOpen, ChevronRight, Upload as UploadIcon, FileText, ClipboardList, Pencil, Download, CheckCircle, XCircle, GraduationCap, UploadCloud, FileSpreadsheet, Calendar, Video, ArrowLeft, Mic, MicOff, Monitor, Paperclip, CheckCircle2, Trash2, ChevronDown, UserCheck, AlertCircle, Banknote, Search, Award, Filter, ArrowDownUp, Moon, Bell, X, Eye, TrendingUp, TrendingDown, ExternalLink } from 'lucide-react';
 import Papa from 'papaparse';
 import './StaffDashboard.css';
 
@@ -83,6 +83,7 @@ const StaffDashboard = () => {
   const [selectedStudentForProfile, setSelectedStudentForProfile] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
   const [scheduleList, setScheduleList] = useState([]);
+  const [scheduleTab, setScheduleTab] = useState('ongoing');
   const [activeTab, setActiveTab] = useState('3');
   const [isAddStudentModalVisible, setIsAddStudentModalVisible] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState(null);
@@ -121,6 +122,9 @@ const StaffDashboard = () => {
   const [isMarksDetailsModalVisible, setIsMarksDetailsModalVisible] = useState(false);
   const [isViewMarksModalVisible, setIsViewMarksModalVisible] = useState(false);
   const [selectedStudentForViewMarks, setSelectedStudentForViewMarks] = useState(null);
+  const [isVerificationModalVisible, setIsVerificationModalVisible] = useState(false);
+  const [selectedStudentForVerification, setSelectedStudentForVerification] = useState(null);
+  const [verificationTab, setVerificationTab] = useState('photo');
   const [selectedStudentForMarks, setSelectedStudentForMarks] = useState(null);
 
   // Course Materials State
@@ -131,6 +135,12 @@ const StaffDashboard = () => {
   const [materialSelectedStudents, setMaterialSelectedStudents] = useState([]);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const [staffMaterials, setStaffMaterials] = useState([]);
+  const [materialTab, setMaterialTab] = useState('upload');
+  const [editingMaterial, setEditingMaterial] = useState(null);
+  const [isEditMaterialModalVisible, setIsEditMaterialModalVisible] = useState(false);
+  const [isEditNameModalVisible, setIsEditNameModalVisible] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [updatingName, setUpdatingName] = useState(false);
 
   const getAgeBucket = (dob) => {
     if (!dob) return null;
@@ -155,6 +165,7 @@ const StaffDashboard = () => {
     });
   };
   const [attendanceState, setAttendanceState] = useState({});
+  const [sessionTopics, setSessionTopics] = useState('');
   const [isSubmitSummaryModalVisible, setIsSubmitSummaryModalVisible] = useState(false);
   const [absenteesList, setAbsenteesList] = useState([]);
   const [submittingAttendance, setSubmittingAttendance] = useState(false);
@@ -288,9 +299,11 @@ const StaffDashboard = () => {
         totalAbsentees: totalAbsentees,
         totalPresentees: totalPresentees,
         records: records,
+        sessionTopics: sessionTopics,
         isFinal: true
       });
       
+      setSessionTopics('');
       localStorage.removeItem(`draft_attendance_${selectedBatch.id}_${compositeKey}`);
       
       message.success("Attendance submitted successfully!");
@@ -401,17 +414,16 @@ const StaffDashboard = () => {
   }, [user]);
 
   let unsubscribeStudents = null;
+  let unsubscribeAssignments = null;
 
   const fetchStudents = async () => {
     if (!user?.organizationId) return;
     try {
       setLoading(true);
-      const [assignments, orgDetails, courses] = await Promise.all([
-        getStaffAssignments(user.organizationId, user.id),
+      const [orgDetails, courses] = await Promise.all([
         getOrganizationDetails(user.organizationId),
         getOrganizationCourses(user.organizationId)
       ]);
-      setScheduleList(assignments);
       setCourseList(courses || []);
       
       if (orgDetails.logoUrl) {
@@ -427,6 +439,11 @@ const StaffDashboard = () => {
         setStudentList(studentsData);
         setLoading(false);
       });
+
+      if (unsubscribeAssignments) unsubscribeAssignments();
+      unsubscribeAssignments = subscribeToStaffAssignments(user.organizationId, user.id, (assignments) => {
+        setScheduleList(assignments);
+      });
     } catch (error) {
       console.error(error);
       setLoading(false);
@@ -441,6 +458,7 @@ const StaffDashboard = () => {
     
     return () => {
       if (unsubscribeStudents) unsubscribeStudents();
+      if (unsubscribeAssignments) unsubscribeAssignments();
     };
   }, [user?.organizationId]);
 
@@ -651,8 +669,9 @@ const StaffDashboard = () => {
     <div className="uxer-layout">
       {/* Sidebar Navigation */}
       <aside className="uxer-sidebar">
-        <div className="uxer-sidebar-logo">
-          <div className="logo-icon"></div>
+        <div className="uxer-sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px' }}>
+          {logoUrl ? <img src={logoUrl} alt="Org Logo" style={{ maxHeight: '32px', maxWidth: '32px', objectFit: 'contain' }} /> : <div className="logo-icon"></div>}
+          <span style={{ fontSize: '18px', fontWeight: '800', color: '#111111', letterSpacing: '-0.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.organizationName || 'Faculty Portal'}</span>
         </div>
         
         <div className="uxer-sidebar-menu">
@@ -676,7 +695,21 @@ const StaffDashboard = () => {
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.name || 'Staff'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.name || 'Staff'}</span>
+                <button 
+                  onClick={() => {
+                    setNewStaffName(user?.name || '');
+                    setIsEditNameModalVisible(true);
+                  }}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--slate-400)', transition: 'color 0.2s' }}
+                  onMouseOver={e => e.currentTarget.style.color = 'var(--blue-600)'}
+                  onMouseOut={e => e.currentTarget.style.color = 'var(--slate-400)'}
+                  title="Edit Display Name"
+                >
+                  <Pencil size={12} />
+                </button>
+              </div>
               <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{user?.organizationName || 'Organization'}</span>
             </div>
           </div>
@@ -691,17 +724,7 @@ const StaffDashboard = () => {
       <main className="uxer-main">
         <header className="uxer-header">
           <div className="uxer-header-left">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {logoUrl ? (
-                <img src={logoUrl} alt="Organization Logo" style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '4px' }} />
-              ) : (
-                <div style={{ width: '40px', height: '40px', borderRadius: '4px', backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                  {(user?.organizationName || 'O').charAt(0)}
-                </div>
-              )}
-              <div className="org-text" style={{ textTransform: 'uppercase', margin: 0 }}>{user?.organizationName || 'Organization'}</div>
-            </div>
-            <h1>Faculty Portal</h1>
+            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#111', margin: 0 }}>Faculty Portal</h1>
           </div>
           <div className="uxer-header-right">
             <div className="uxer-search">
@@ -1042,7 +1065,7 @@ const StaffDashboard = () => {
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Student Email</label>
                   <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
                     studentForm.setFieldsValue({email: e.target.value});
-                    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                    if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(e.target.value)) {
                       e.target.setCustomValidity('Please enter a valid Email address');
                     } else {
                       e.target.setCustomValidity('');
@@ -1200,6 +1223,7 @@ const StaffDashboard = () => {
                               <th>Batch</th>
                               <th>Phone</th>
                               <th>Status</th>
+                              <th>Verification</th>
                               <th>Actions</th>
                             </tr>
                           </thead>
@@ -1224,6 +1248,21 @@ const StaffDashboard = () => {
                                     <td>{s.batch || '-'}</td>
                                     <td>{s.phoneNumber || s.parentPhone || '-'}</td>
                                     <td><span className={`uxer-status-pill ${statusClass}`}>{statusLabel}</span></td>
+                                    <td>
+                                      {(s?.studentPhotoUrl || s?.identityDocUrl || s?.documents?.idProofUrl) ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}>Uploaded</span>
+                                          <button 
+                                            onClick={() => { setSelectedStudentForVerification(s); setIsVerificationModalVisible(true); }}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-600)', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                          >
+                                            <ExternalLink size={12} /> View
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }}>Pending</span>
+                                      )}
+                                    </td>
                                     <td>
                                       <div style={{ display: 'flex', gap: '16px' }}>
                                         <button
@@ -1290,62 +1329,107 @@ const StaffDashboard = () => {
 
               {activeTab === '4' && (
                 <div className="w-full flex flex-col gap-6">
-                  <div className="flex justify-between items-center bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex justify-between items-center bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex-wrap gap-4">
                     <h3 className="text-xl font-bold m-0" style={{ color: 'var(--text-main)' }}>My Batch & Course Schedule</h3>
+                    <div style={{ display: 'flex', gap: '8px', backgroundColor: 'var(--bg-hover)', padding: '4px', borderRadius: '8px' }}>
+                      <button 
+                        onClick={() => setScheduleTab('ongoing')}
+                        style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'bold', fontSize: '14px', backgroundColor: scheduleTab === 'ongoing' ? 'var(--card-bg)' : 'transparent', color: scheduleTab === 'ongoing' ? 'var(--text-main)' : 'var(--text-secondary)', boxShadow: scheduleTab === 'ongoing' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
+                      >
+                        Assigned Classes (Ongoing)
+                      </button>
+                      <button 
+                        onClick={() => setScheduleTab('history')}
+                        style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 'bold', fontSize: '14px', backgroundColor: scheduleTab === 'history' ? 'var(--card-bg)' : 'transparent', color: scheduleTab === 'history' ? 'var(--text-main)' : 'var(--text-secondary)', boxShadow: scheduleTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
+                      >
+                        History of Assigned Classes
+                      </button>
+                    </div>
                   </div>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
-                     {scheduleList.length === 0 && (
-                        <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
-                           <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>No batches assigned to your schedule.</p>
-                        </div>
-                     )}
-                     {scheduleList.filter(batch => {
-                       const searchVal = (globalSearchQuery || '').toLowerCase();
-                       if (!searchVal) return true;
-                       return (batch.courseName || '').toLowerCase().includes(searchVal) ||
-                              (batch.classTiming || '').toLowerCase().includes(searchVal) ||
-                              (batch.startDate || '').toLowerCase().includes(searchVal);
-                     }).map(batch => (
-                        <div key={batch.id} 
-                             onClick={() => setSelectedBatch(batch)}
-                             style={{ backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}
-                             onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 15px rgba(0,0,0,0.1)'; }}
-                             onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)'; }}
-                        >
-                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                             <h4 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--accent-royal-purple)' }}>{batch.courseName}</h4>
-                             <div style={{ backgroundColor: 'var(--indigo-50, #eef2ff)', color: 'var(--indigo-600, #4f46e5)', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>Active</div>
+                     {(() => {
+                       const currentDate = new Date();
+                       
+                       const filteredList = scheduleList.filter(batch => {
+                         const searchVal = (globalSearchQuery || '').toLowerCase();
+                         if (searchVal && !(batch.courseName || '').toLowerCase().includes(searchVal) &&
+                                !(batch.classTiming || '').toLowerCase().includes(searchVal) &&
+                                !(batch.startDate || '').toLowerCase().includes(searchVal)) {
+                            return false;
+                         }
+                         
+                         const endDate = new Date(batch.endDate);
+                         endDate.setHours(23, 59, 59, 999);
+                         
+                         if (scheduleTab === 'ongoing') {
+                           return currentDate <= endDate;
+                         } else {
+                           return currentDate > endDate;
+                         }
+                       });
+                       
+                       if (filteredList.length === 0) {
+                         return (
+                           <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
+                              <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>
+                                {scheduleTab === 'ongoing' ? 'No ongoing classes assigned to your schedule.' : 'No history of completed classes.'}
+                              </p>
                            </div>
-                           
-                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
-                               <Clock style={{ width: '16px', height: '16px' }} />
-                               <span>{batch.classTiming || 'Timing Not Set'}</span>
-                             </div>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
-                               <CalendarIcon style={{ width: '16px', height: '16px' }} />
-                               <span>{batch.startDate} to {batch.endDate}</span>
-                             </div>
-                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
-                               <Users style={{ width: '16px', height: '16px' }} />
-                               <span>{studentList.filter(s => s.course === batch.courseName).length} Enrolled Students</span>
-                             </div>
+                         );
+                       }
+                       
+                       return filteredList.map(batch => {
+                         const isCompleted = scheduleTab === 'history';
+                         return (
+                           <div key={batch.id} 
+                                onClick={() => setSelectedBatch(batch)}
+                                className={isCompleted ? "completed-course-card" : ""}
+                                style={{ backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}
+                                onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 10px 15px rgba(0,0,0,0.1)'; }}
+                                onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)'; }}
+                           >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                                <h4 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: 'var(--accent-royal-purple)' }}>{batch.courseName}</h4>
+                                {isCompleted ? (
+                                  <div className="completed-course-badge">Completed Class</div>
+                                ) : (
+                                  <div style={{ backgroundColor: 'var(--indigo-50, #eef2ff)', color: 'var(--indigo-600, #4f46e5)', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>Ongoing Class</div>
+                                )}
+                              </div>
+                              
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
+                                  <Clock style={{ width: '16px', height: '16px' }} />
+                                  <span>{batch.classTiming || 'Timing Not Set'}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
+                                  <CalendarIcon style={{ width: '16px', height: '16px' }} />
+                                  <span>{batch.startDate} to {batch.endDate}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '14px' }}>
+                                  <Users style={{ width: '16px', height: '16px' }} />
+                                  <span>{studentList.filter(s => s.course === batch.courseName).length} Assigned Students</span>
+                                </div>
+                              </div>
+                              
+                              <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                                 <button style={{ width: '100%', padding: '10px', backgroundColor: isCompleted ? 'transparent' : 'var(--theme-bg-premium)', color: isCompleted ? '#4b5563' : 'var(--text-main)', border: isCompleted ? '1px solid #d1d5db' : '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>View Details & Attendance</button>
+                              </div>
                            </div>
-                           
-                           <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                              <button style={{ width: '100%', padding: '10px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>View Details & Attendance</button>
-                           </div>
-                        </div>
-                     ))}
+                         );
+                       });
+                     })()}
                   </div>
 
                   {/* Context Overlay Modal for Selected Batch */}
-                  {selectedBatch && (
+                  {selectedBatch && (() => {
+                    const isBatchCompleted = selectedBatch.status === 'Completed' || new Date() > new Date(selectedBatch.endDate);
+                    return (
                     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(30, 41, 59, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', zIndex: 1000 }}>
                       <div style={{ width: '450px', maxWidth: '100%', height: '100%', backgroundColor: 'var(--panel-solid-white)', padding: '20px', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', overflowY: 'auto' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                          <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: 'var(--text-primary-crisp)' }}>Class Context</h3>
+                          <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: 'var(--text-primary-crisp)' }}>{isBatchCompleted ? 'Class Overview' : 'Class Context'}</h3>
                           <button onClick={() => setSelectedBatch(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted-gray)' }}><XCircle /></button>
                         </div>
                         
@@ -1357,13 +1441,19 @@ const StaffDashboard = () => {
                           </div>
                         </div>
 
+                        {isBatchCompleted && (
+                          <div style={{ backgroundColor: '#fef2f2', borderLeft: '4px solid #ef4444', padding: '12px', marginBottom: '24px', borderRadius: '8px', color: '#991b1b', fontSize: '14px', fontWeight: '600' }}>
+                            Class Completed - Attendance Locked
+                          </div>
+                        )}
+
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                           <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: 'var(--text-primary-crisp)' }}>Attendance Framework</h4>
-                          {!activeBatchEditable && <span style={{ padding: '4px 8px', backgroundColor: 'var(--danger-vibrant)', color: '#fff', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>LOCKED</span>}
+                          {(!activeBatchEditable || isBatchCompleted) && <span style={{ padding: '4px 8px', backgroundColor: 'var(--danger-vibrant)', color: '#fff', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>LOCKED</span>}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
                           {activeBatchStudents.map((record) => (
-                            <div key={record.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: activeBatchEditable ? 'pointer' : 'default', backgroundColor: (attendanceState[record.id] === 'P' || !attendanceState[record.id]) ? 'var(--panel-solid-white)' : 'rgba(239, 68, 68, 0.05)' }} onClick={() => toggleAttendance(record.id)}>
+                            <div key={record.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: (activeBatchEditable && !isBatchCompleted) ? 'pointer' : 'default', backgroundColor: (attendanceState[record.id] === 'P' || !attendanceState[record.id]) ? 'var(--panel-solid-white)' : 'rgba(239, 68, 68, 0.05)' }} onClick={() => (activeBatchEditable && !isBatchCompleted) && toggleAttendance(record.id)}>
                               <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--accent-royal-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px' }}>
                                 {record.name?.charAt(0).toUpperCase()}
                               </div>
@@ -1383,22 +1473,38 @@ const StaffDashboard = () => {
                           )}
                         </div>
                         
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => handleSubmitAttendance(false)} disabled={!activeBatchEditable || submittingAttendance} style={{ flex: 1, padding: '12px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-primary-crisp)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: (!activeBatchEditable || submittingAttendance) ? 'not-allowed' : 'pointer' }}>
-                              Save as Draft
-                            </button>
-                            <button onClick={() => handleSubmitAttendance(true)} disabled={!activeBatchEditable || submittingAttendance} style={{ flex: 1, padding: '12px', backgroundColor: 'var(--accent-royal-purple)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: (!activeBatchEditable || submittingAttendance) ? 'not-allowed' : 'pointer' }}>
-                              Submit Final
-                            </button>
+                        {activeBatchStudents.length > 0 && (
+                          <div style={{ marginBottom: '24px' }}>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#334155', marginBottom: '8px' }}>Session Topics Covered / Class Notes</label>
+                            <textarea
+                              value={sessionTopics}
+                              onChange={(e) => setSessionTopics(e.target.value)}
+                              disabled={!activeBatchEditable || isBatchCompleted}
+                              placeholder="Enter what topics were discussed, chapters covered, or general class notes here..."
+                              style={{ width: '100%', minHeight: '100px', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '14px', color: '#0f172a', resize: 'vertical', fontFamily: 'inherit', backgroundColor: (!activeBatchEditable || isBatchCompleted) ? 'var(--bg-hover)' : '#fff' }}
+                            ></textarea>
                           </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {(!isBatchCompleted && activeBatchEditable) && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => handleSubmitAttendance(false)} disabled={submittingAttendance} style={{ flex: 1, padding: '12px', backgroundColor: 'var(--theme-bg-premium)', color: 'var(--text-primary-crisp)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: submittingAttendance ? 'not-allowed' : 'pointer' }}>
+                                Save as Draft
+                              </button>
+                              <button onClick={() => handleSubmitAttendance(true)} disabled={submittingAttendance} style={{ flex: 1, padding: '12px', backgroundColor: 'var(--accent-royal-purple)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: submittingAttendance ? 'not-allowed' : 'pointer' }}>
+                                Submit Final
+                              </button>
+                            </div>
+                          )}
                           <button onClick={() => {}} style={{ width: '100%', padding: '12px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                             Download Report
                           </button>
                         </div>
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1423,16 +1529,21 @@ const StaffDashboard = () => {
                   </button>
                 </div>
 
-                {attendanceSubTab === 'daily' && (
+                {attendanceSubTab === 'daily' && (() => {
+                  const todayStr = new Date().toLocaleDateString('en-CA');
+                  const activeTodayBatches = scheduleList.filter(batch => 
+                    batch.status !== 'Completed' && new Date() <= new Date(batch.endDate)
+                  );
+                  return (
                   <div>
                     <h3 className="text-lg font-semibold mb-4 text-slate-800">Today's Batches</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
-                      {scheduleList.length === 0 && (
+                      {activeTodayBatches.length === 0 && (
                         <div style={{ padding: '20px', textAlign: 'center', backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px dashed var(--border-color)', gridColumn: '1 / -1' }}>
-                           <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>No batches scheduled for today.</p>
+                           <p style={{ color: '#64748b', fontSize: '16px', margin: 0 }}>No active batches scheduled for today.</p>
                         </div>
                       )}
-                      {scheduleList.map(batch => (
+                      {activeTodayBatches.map(batch => (
                         <div key={batch.id} 
                              style={{ backgroundColor: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}
                         >
@@ -1459,7 +1570,8 @@ const StaffDashboard = () => {
                       ))}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {attendanceSubTab === 'history' && (
                   <div>
@@ -1481,13 +1593,12 @@ const StaffDashboard = () => {
                           <tbody>
                             {attendanceHistoryList.filter(r => {
                                const searchVal = (globalSearchQuery || '').toLowerCase();
+                               const todayStr = new Date().toISOString().split('T')[0];
+                               if (r.date === todayStr) return false;
                                if (!searchVal) return true;
                                return (r.batchName || '').toLowerCase().includes(searchVal) ||
                                       (r.date || '').toLowerCase().includes(searchVal);
                             }).map(r => {
-                              const today = new Date().toISOString().split('T')[0];
-                              const isToday = r.date === today;
-                              const editable = isToday && isAttendanceEditable(r.slot);
                               return (
                                 <tr 
                                   key={r.id} 
@@ -1515,39 +1626,13 @@ const StaffDashboard = () => {
                                   <td>{r.totalPresentees !== undefined ? r.totalPresentees : (r.records?.filter(rec => rec.status === 'P').length || 0)}</td>
                                   <td>{r.totalAbsentees !== undefined ? r.totalAbsentees : (r.records?.filter(rec => rec.status === 'A').length || 0)}</td>
                                   <td>
-                                    {editable ? (
-                                      <button 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const batch = scheduleList.find(b => b.courseName === r.batchName);
-                                          if (batch) {
-                                            setSelectedBatch(batch);
-                                            const newState = {};
-                                            if (r.records) {
-                                              r.records.forEach(rec => {
-                                                const student = studentList.find(s => s.name === rec.studentName && s.course === batch.courseName);
-                                                if (student) newState[student.id] = rec.status;
-                                              });
-                                            }
-                                            setAttendanceState(newState);
-                                            setIsAttendanceModalVisible(true);
-                                          } else {
-                                            alert("Batch details not found in schedule.");
-                                          }
-                                        }}
-                                        style={{ padding: '6px 12px', backgroundColor: 'var(--blue-600, #2563eb)', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                      >
-                                        <Pencil style={{ width: '12px', height: '12px' }} /> Edit
-                                      </button>
-                                    ) : (
-                                      <span style={{ padding: '4px 8px', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Closed</span>
-                                    )}
+                                      <span style={{ padding: '4px 8px', backgroundColor: 'var(--border-color)', color: '#64748b', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>View Only</span>
                                   </td>
                                 </tr>
                               );
                             })}
                             {attendanceHistoryList.length === 0 && (
-                              <tr><td>No attendance history found.</td></tr>
+                              <tr><td colSpan="7">No attendance history found.</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -1598,15 +1683,34 @@ const StaffDashboard = () => {
 
             {activeTab === '6' && (
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden w-full mt-6">
-                <h3 className="text-lg font-semibold mb-4 text-slate-800" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Award className="w-5 h-5 text-blue-600" /> Student Marks Portal
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 className="text-lg font-semibold text-slate-800" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                    <Award className="w-5 h-5 text-blue-600" /> Student Marks Portal
+                  </h3>
+                  {(() => {
+                    const assignedCourses = Array.from(new Set(scheduleList.map(b => b.courseName)));
+                    return (
+                      <select 
+                        value={facultyMarksCourseFilter} 
+                        onChange={e => setFacultyMarksCourseFilter(e.target.value)}
+                        style={{ padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: '#fff', fontSize: '14px', outline: 'none', cursor: 'pointer', minWidth: '200px' }}
+                      >
+                        <option value="All">All Assigned Courses</option>
+                        {assignedCourses.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    );
+                  })()}
+                </div>
                 
                 {(() => {
                   const searchVal = (globalSearchQuery || '').toLowerCase();
-                  const assignedStudents = studentList.filter(s => 
-                    (!searchVal || (s.name || '').toLowerCase().includes(searchVal) || (s.enrollmentNo || '').toLowerCase().includes(searchVal))
-                  );
+                  const assignedCourses = Array.from(new Set(scheduleList.map(b => b.courseName)));
+                  const assignedStudents = studentList.filter(s => {
+                    if (!assignedCourses.includes(s.course)) return false;
+                    if (facultyMarksCourseFilter && facultyMarksCourseFilter !== 'All' && s.course !== facultyMarksCourseFilter) return false;
+                    if (searchVal && !(s.name || '').toLowerCase().includes(searchVal) && !(s.enrollmentNo || '').toLowerCase().includes(searchVal)) return false;
+                    return true;
+                  });
                   
                   if (assignedStudents.length === 0) {
                     return <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No students found.</div>;
@@ -1700,16 +1804,28 @@ const StaffDashboard = () => {
                                 ))}
                               </tbody>
                             </table>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: 'var(--indigo-50, #eef2ff)', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', color: 'var(--indigo-900)' }}>
-                              <span>Total: {exam.totalObtainedMarks || exam.totalObtained} / {exam.totalMaxMarks || exam.totalMax}</span>
-                              <span>Percentage: {exam.percentage}%</span>
-                              <span>Grade: {exam.grade}</span>
+                                {(() => {
+                                  const totalObtained = exam.subjects?.reduce((sum, sub) => sum + Number(sub.obtained || 0), 0) || exam.totalObtainedMarks || exam.totalObtained || 0;
+                                  const totalMax = exam.subjects?.reduce((sum, sub) => sum + Number(sub.maxMarks || 0), 0) || exam.totalMaxMarks || exam.totalMax || 0;
+                                  const percentage = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(2) : 0;
+                                  let grade = 'F';
+                                  if (percentage >= 90) grade = 'O';
+                                  else if (percentage >= 80) grade = 'A+';
+                                  else if (percentage >= 70) grade = 'A';
+                                  else if (percentage >= 60) grade = 'B+';
+                                  else if (percentage >= 50) grade = 'B';
+                                  else if (percentage >= 45) grade = 'C';
+
+                                  return (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: 'var(--indigo-50, #eef2ff)', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', color: 'var(--indigo-900)' }}>
+                                      <span>Total: {totalObtained} / {totalMax}</span>
+                                      <span>Percentage: {percentage}%</span>
+                                      <span>Grade: {exam.grade || grade}</span>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
                             </div>
-                            <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--slate-400)' }}>
-                              Entered By: {exam.enteredBy || exam.uploadedByStaffName || 'Staff'} ({exam.staffRole}) on {exam.uploadedDate ? new Date(exam.uploadedDate).toLocaleDateString() : 'N/A'}
-                            </div>
-                          </div>
-                        </div>
                       ))}
                     </div>
                   ) : (
@@ -1725,23 +1841,36 @@ const StaffDashboard = () => {
                   <BookOpen className="w-5 h-5 text-blue-600" /> Course Materials Management
                 </h3>
                 
-                <div style={{ display: 'flex', gap: '24px' }}>
-                  {/* Upload Form */}
-                  <div style={{ flex: 1, backgroundColor: 'var(--bg-hover)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                    <h4 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>Upload New Material</h4>
+                <div style={{ display: 'flex', gap: '16px', borderBottom: '2px solid var(--border-color)', marginBottom: '24px' }}>
+                  <button 
+                    onClick={() => setMaterialTab('upload')}
+                    style={{ padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: materialTab === 'upload' ? '2px solid var(--blue-500, #3b82f6)' : '2px solid transparent', color: materialTab === 'upload' ? 'var(--blue-500, #3b82f6)' : 'var(--text-secondary)', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginBottom: '-2px', transition: 'all 0.2s' }}
+                  >Upload Material</button>
+                  <button 
+                    onClick={() => setMaterialTab('tracking')}
+                    style={{ padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: materialTab === 'tracking' ? '2px solid var(--blue-500, #3b82f6)' : '2px solid transparent', color: materialTab === 'tracking' ? 'var(--blue-500, #3b82f6)' : 'var(--text-secondary)', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', marginBottom: '-2px', transition: 'all 0.2s' }}
+                  >Material Tracking & History</button>
+                </div>
+
+                {materialTab === 'upload' && (
+                  <div style={{ backgroundColor: 'var(--bg-hover)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                     <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (!materialFile || !materialTitle) return message.warning('Title and File are required');
-                      if (materialSelectedStudents.length === 0) return message.warning('Select at least one student');
+                      if (!materialCourseFilter) return message.warning('Please select a target course');
+                      
+                      const assignedStudentsList = studentList.filter(s => s.course === materialCourseFilter);
+                      if (assignedStudentsList.length === 0) return message.warning('No assigned students found for this course.');
+                      const autoAssignedStudentIds = assignedStudentsList.map(s => s.id);
                       
                       setUploadingMaterial(true);
                       try {
-                        await uploadCourseMaterial(user.organizationId, user.id, materialFile, materialTitle, materialDesc, materialSelectedStudents);
-                        message.success('Material uploaded and assigned successfully!');
+                        await uploadCourseMaterial(user.organizationId, user.id, materialFile, materialTitle, materialDesc, autoAssignedStudentIds);
+                        message.success('Course Material Uploaded & Sent Successfully!');
                         setMaterialTitle('');
                         setMaterialDesc('');
                         setMaterialFile(null);
-                        setMaterialSelectedStudents([]);
+                        setMaterialCourseFilter('');
                         // Refresh materials list
                         const materials = await getCourseMaterialsForStaff(user.id);
                         setStaffMaterials(materials);
@@ -1750,91 +1879,111 @@ const StaffDashboard = () => {
                       } finally {
                         setUploadingMaterial(false);
                       }
-                    }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    }} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                       
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Target Course</label>
+                          <select className="native-form-select" required style={{ width: '100%' }} value={materialCourseFilter} onChange={e => setMaterialCourseFilter(e.target.value)}>
+                            <option value="">-- Select Course --</option>
+                            {Array.from(new Set(scheduleList.map(b => b.courseName))).map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          {materialCourseFilter && (
+                            <div style={{ marginTop: '8px', padding: '8px 12px', backgroundColor: 'var(--indigo-50)', color: 'var(--indigo-900)', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Users size={16} /> Auto-assigned to {studentList.filter(s => s.course === materialCourseFilter).length} students
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>File (PDF, PPT, Video)</label>
+                          <input type="file" className="native-form-input" required onChange={e => setMaterialFile(e.target.files[0])} style={{ width: '100%' }} />
+                        </div>
+                      </div>
+
                       <div>
                         <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Material Title</label>
                         <input type="text" className="native-form-input" required value={materialTitle} onChange={e => setMaterialTitle(e.target.value)} />
                       </div>
                       
                       <div>
-                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Description</label>
-                        <textarea className="native-form-input" rows="2" value={materialDesc} onChange={e => setMaterialDesc(e.target.value)} />
+                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Description (Optional)</label>
+                        <textarea className="native-form-input" rows="3" value={materialDesc} onChange={e => setMaterialDesc(e.target.value)} />
                       </div>
                       
-                      <div>
-                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>File (PDF, PPT, Video)</label>
-                        <input type="file" className="native-form-input" required onChange={e => setMaterialFile(e.target.files[0])} />
-                      </div>
-                      
-                      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '8px' }}>
-                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Assign to Students</label>
-                        <select className="native-form-select" style={{ marginBottom: '8px', width: '100%' }} value={materialCourseFilter} onChange={e => setMaterialCourseFilter(e.target.value)}>
-                          <option value="">-- Filter by Course --</option>
-                          {Array.from(new Set(studentList.map(s => s.course).filter(Boolean))).map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        
-                        <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px', backgroundColor: '#fff' }}>
-                          {studentList.filter(s => !materialCourseFilter || s.course === materialCourseFilter).map(student => (
-                            <div key={student.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
-                              <input 
-                                type="checkbox" 
-                                id={`student_${student.id}`}
-                                checked={materialSelectedStudents.includes(student.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) setMaterialSelectedStudents([...materialSelectedStudents, student.id]);
-                                  else setMaterialSelectedStudents(materialSelectedStudents.filter(id => id !== student.id));
-                                }}
-                              />
-                              <label htmlFor={`student_${student.id}`}>{student.name} ({student.enrollmentNo || student.id.substring(0,6)})</label>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
-                          <button type="button" onClick={() => {
-                            const filtered = studentList.filter(s => !materialCourseFilter || s.course === materialCourseFilter).map(s => s.id);
-                            setMaterialSelectedStudents(Array.from(new Set([...materialSelectedStudents, ...filtered])));
-                          }} style={{ background: 'none', border: 'none', color: 'var(--blue-600)', cursor: 'pointer', padding: 0, marginRight: '12px' }}>Select All Visible</button>
-                          <button type="button" onClick={() => setMaterialSelectedStudents([])} style={{ background: 'none', border: 'none', color: 'var(--red-600)', cursor: 'pointer', padding: 0 }}>Clear All</button>
-                        </div>
-                      </div>
-
-                      <button type="submit" disabled={uploadingMaterial} style={{ padding: '10px', backgroundColor: 'var(--blue-600)', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                        {uploadingMaterial ? 'Uploading...' : 'Upload & Assign Material'}
+                      <button type="submit" disabled={uploadingMaterial} style={{ padding: '14px', backgroundColor: 'var(--blue-600)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', opacity: uploadingMaterial ? 0.7 : 1 }}>
+                        {uploadingMaterial ? 'Uploading Material...' : 'Upload & Assign Material'}
                       </button>
                     </form>
                   </div>
+                )}
 
-                  {/* Materials List & Tracking */}
-                  <div style={{ flex: 1 }}>
-                    <h4 style={{ margin: '0 0 16px 0', fontSize: '16px' }}>Uploaded Materials & Tracking</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '500px', overflowY: 'auto' }}>
-                      {staffMaterials.map(mat => (
-                        <div key={mat.id} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: '#fff' }}>
-                          <h5 style={{ margin: '0 0 4px 0', fontSize: '16px', color: 'var(--accent-royal-purple)' }}>{mat.title}</h5>
-                          <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>{mat.fileName} • Assigned to {mat.assignedStudentIds.length} students</p>
-                          
-                          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>View Status:</div>
-                            <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
-                              {mat.assignedStudentIds.map(sid => {
-                                const st = studentList.find(s => s.id === sid);
-                                const viewed = (mat.viewedBy || []).includes(sid);
-                                return (
-                                  <div key={sid} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid var(--border-color)' }}>
-                                    <span>{st ? st.name : sid}</span>
-                                    {viewed ? <span style={{ color: 'var(--green-600)', fontWeight: 'bold' }}>Viewed</span> : <span style={{ color: 'var(--red-500)' }}>Pending</span>}
-                                  </div>
-                                );
-                              })}
+                {materialTab === 'tracking' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '600px', overflowY: 'auto' }}>
+                    {staffMaterials.map(mat => (
+                      <div key={mat.id} style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h5 style={{ margin: '0 0 6px 0', fontSize: '18px', color: 'var(--accent-royal-purple)' }}>{mat.title}</h5>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Paperclip size={14} /> {mat.fileName} • {new Date(mat.timestamp?.toDate ? mat.timestamp.toDate() : Date.now()).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <div style={{ padding: '6px 12px', backgroundColor: 'var(--indigo-50)', color: 'var(--indigo-900)', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Users size={14} /> Assigned to {mat.assignedStudentIds?.length || 0} students
                             </div>
+                            <button 
+                              onClick={() => {
+                                setEditingMaterial(mat);
+                                setIsEditMaterialModalVisible(true);
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--blue-600)' }}
+                              title="Edit Material"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                if (window.confirm('Are you sure you want to delete this material?')) {
+                                  try {
+                                    await deleteCourseMaterial(mat.id);
+                                    message.success('Material deleted successfully');
+                                    const materials = await getCourseMaterialsForStaff(user.id);
+                                    setStaffMaterials(materials);
+                                  } catch (err) {
+                                    message.error(err.message);
+                                  }
+                                }
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--red-600)' }}
+                              title="Delete Material"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         </div>
-                      ))}
-                      {staffMaterials.length === 0 && <p style={{ color: '#64748b' }}>No materials uploaded yet.</p>}
-                    </div>
+                        
+                        <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '4px' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '12px', color: 'var(--text-main)' }}>View Status:</div>
+                          <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                            {mat.assignedStudentIds && mat.assignedStudentIds.map(sid => {
+                              const st = studentList.find(s => s.id === sid);
+                              const viewedRecord = (mat.viewedBy || []).find(v => v.studentId === sid);
+                              const viewed = !!viewedRecord;
+                              return (
+                                <div key={sid} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '8px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                                  <span style={{ fontWeight: '500' }}>{st ? st.name : sid}</span>
+                                  {viewed ? <span style={{ color: 'var(--green-600)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={14}/> Viewed {viewedRecord.viewedAt ? new Date(viewedRecord.viewedAt).toLocaleDateString() : ''}</span> : <span style={{ color: 'var(--red-500)', display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={14}/> Pending</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {staffMaterials.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', backgroundColor: 'var(--bg-hover)', borderRadius: '12px' }}>No materials uploaded yet.</div>}
                   </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -1892,6 +2041,17 @@ const StaffDashboard = () => {
                   </div>
                 )}
               </div>
+              {activeBatchStudents.length > 0 && (
+                <div style={{ marginTop: '24px' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#334155', marginBottom: '8px' }}>Session Topics Covered / Class Notes</label>
+                  <textarea
+                    value={sessionTopics}
+                    onChange={(e) => setSessionTopics(e.target.value)}
+                    placeholder="Enter what topics were discussed, chapters covered, or general class notes here..."
+                    style={{ width: '100%', minHeight: '100px', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', color: '#0f172a', resize: 'vertical', fontFamily: 'inherit' }}
+                  ></textarea>
+                </div>
+              )}
             </div>
 
             <div style={{ padding: '20px 24px', borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc', borderRadius: '0 0 16px 16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
@@ -1926,7 +2086,7 @@ const StaffDashboard = () => {
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Email</label>
               <input type="email" placeholder="Enter student email" required style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', boxSizing: 'border-box' }} onChange={(e) => {
                 editForm.setFieldsValue({email: e.target.value});
-                if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.target.value)) {
+                if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(e.target.value)) {
                   e.target.setCustomValidity('Please enter a valid Email address');
                 } else {
                   e.target.setCustomValidity('');
@@ -2085,6 +2245,89 @@ const StaffDashboard = () => {
 
 
 
+      {isEditNameModalVisible && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "24px", width: '400px', maxWidth: '90%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Edit Faculty Display Name</h2>
+              <button onClick={() => setIsEditNameModalVisible(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><XCircle /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newStaffName.trim()) return message.warning('Display name cannot be empty');
+              setUpdatingName(true);
+              try {
+                await updateFacultyNameWithCascade(user.id, user.name, newStaffName, user.organizationId);
+                message.success('Display name updated globally!');
+                setIsEditNameModalVisible(false);
+              } catch (err) {
+                message.error('Failed to update name: ' + err.message);
+              } finally {
+                setUpdatingName(false);
+              }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Faculty Name</label>
+                <input type="text" className="native-form-input" required value={newStaffName} onChange={e => setNewStaffName(e.target.value)} style={{ width: '100%' }} />
+              </div>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button type="button" onClick={() => setIsEditNameModalVisible(false)} disabled={updatingName} style={{ padding: '10px 16px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={updatingName} style={{ padding: '10px 16px', backgroundColor: 'var(--blue-600)', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: updatingName ? 0.7 : 1 }}>{updatingName ? 'Saving...' : 'Save Changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isEditMaterialModalVisible && editingMaterial && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "24px", width: '500px', maxWidth: '90%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>Edit Course Material</h2>
+              <button onClick={() => { setIsEditMaterialModalVisible(false); setEditingMaterial(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><XCircle /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await updateCourseMaterial(editingMaterial.id, {
+                  title: editingMaterial.title,
+                  description: editingMaterial.description,
+                  fileUrl: editingMaterial.fileUrl
+                });
+                message.success('Material updated successfully!');
+                setIsEditMaterialModalVisible(false);
+                setEditingMaterial(null);
+                const materials = await getCourseMaterialsForStaff(user.id);
+                setStaffMaterials(materials);
+              } catch (err) {
+                message.error(err.message);
+              }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Material Title</label>
+                <input type="text" className="native-form-input" required value={editingMaterial.title} onChange={e => setEditingMaterial({...editingMaterial, title: e.target.value})} style={{ width: '100%' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Description</label>
+                <textarea className="native-form-input" rows="3" value={editingMaterial.description || ''} onChange={e => setEditingMaterial({...editingMaterial, description: e.target.value})} style={{ width: '100%' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>File URL (Optional Override)</label>
+                <input type="url" className="native-form-input" required value={editingMaterial.fileUrl || ''} onChange={e => setEditingMaterial({...editingMaterial, fileUrl: e.target.value})} style={{ width: '100%' }} />
+              </div>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button type="button" onClick={() => { setIsEditMaterialModalVisible(false); setEditingMaterial(null); }} style={{ padding: '10px 16px', backgroundColor: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '10px 16px', backgroundColor: 'var(--blue-600)', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {globalSearchModalVisible && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.5))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="saas-v3-modal-card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -2151,6 +2394,100 @@ const StaffDashboard = () => {
         </div>
       )}
 
+      {isVerificationModalVisible && selectedStudentForVerification && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'var(--overlay-bg, rgba(0,0,0,0.6))', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ backgroundColor: 'var(--card-bg)', width: '90%', maxWidth: '700px', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+            
+            {/* Modal Header */}
+            <div style={{ padding: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc' }}>
+              <div>
+                <h2 style={{ margin: '0 0 4px 0', fontSize: '20px', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <UserCheck style={{ color: '#2563eb' }} /> Document Verification
+                </h2>
+                <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>Student: <strong>{selectedStudentForVerification.name}</strong> ({selectedStudentForVerification.enrollmentNo || selectedStudentForVerification.id.substring(0,6)})</p>
+              </div>
+              <button onClick={() => setIsVerificationModalVisible(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', backgroundColor: '#fff' }}>
+              <button 
+                onClick={() => setVerificationTab('photo')}
+                style={{ flex: 1, padding: '16px', border: 'none', background: verificationTab === 'photo' ? '#eff6ff' : 'transparent', color: verificationTab === 'photo' ? '#1d4ed8' : '#64748b', borderBottom: verificationTab === 'photo' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px' }}
+              >
+                <User size={18} /> Student Photo Preview
+              </button>
+              <button 
+                onClick={() => setVerificationTab('id')}
+                style={{ flex: 1, padding: '16px', border: 'none', background: verificationTab === 'id' ? '#eff6ff' : 'transparent', color: verificationTab === 'id' ? '#1d4ed8' : '#64748b', borderBottom: verificationTab === 'id' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '15px' }}
+              >
+                <FileText size={18} /> Identity Document Preview
+              </button>
+            </div>
+
+            {/* Modal Content area */}
+            <div style={{ padding: '32px', backgroundColor: '#f1f5f9', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '350px' }}>
+              
+              {verificationTab === 'photo' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                  {selectedStudentForVerification.studentPhotoUrl ? (
+                    <>
+                      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                        <img src={selectedStudentForVerification.studentPhotoUrl} alt="Student Photo" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', objectFit: 'contain' }} />
+                      </div>
+                      <a href={selectedStudentForVerification.studentPhotoUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: '#2563eb', color: '#fff', textDecoration: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 2px 4px rgba(37, 99, 235, 0.3)' }}>
+                        <ExternalLink size={16} /> Open Original Photo Link
+                      </a>
+                    </>
+                  ) : (
+                    <div style={{ textAlign: 'center', color: '#64748b' }}>
+                      <User size={48} style={{ color: '#cbd5e1', marginBottom: '16px' }} />
+                      <h4 style={{ margin: '0 0 8px 0', fontSize: '16px' }}>No Photo Uploaded</h4>
+                      <p style={{ margin: 0, fontSize: '14px' }}>The student has not uploaded a passport photo yet.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {verificationTab === 'id' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                  {(selectedStudentForVerification.identityDocUrl || selectedStudentForVerification?.documents?.idProofUrl) ? (
+                    <>
+                      <div style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', marginBottom: '24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                        {(() => {
+                          const docUrl = selectedStudentForVerification.identityDocUrl || selectedStudentForVerification.documents.idProofUrl;
+                          const isPdf = docUrl.toLowerCase().includes('.pdf');
+                          if (isPdf) {
+                            return (
+                              <iframe src={docUrl} style={{ width: '100%', height: '400px', border: 'none', borderRadius: '8px' }} title="ID Document" />
+                            );
+                          } else {
+                            return (
+                              <img src={docUrl} alt="ID Document" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', objectFit: 'contain' }} />
+                            );
+                          }
+                        })()}
+                      </div>
+                      <a href={selectedStudentForVerification.identityDocUrl || selectedStudentForVerification?.documents?.idProofUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: '#2563eb', color: '#fff', textDecoration: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 2px 4px rgba(37, 99, 235, 0.3)' }}>
+                        <ExternalLink size={16} /> Open Original Document Link
+                      </a>
+                    </>
+                  ) : (
+                    <div style={{ textAlign: 'center', color: '#64748b' }}>
+                      <FileText size={48} style={{ color: '#cbd5e1', marginBottom: '16px' }} />
+                      <h4 style={{ margin: '0 0 8px 0', fontSize: '16px' }}>No ID Document Uploaded</h4>
+                      <p style={{ margin: 0, fontSize: '14px' }}>The student has not uploaded an identity document yet.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
 
 
     </div>
