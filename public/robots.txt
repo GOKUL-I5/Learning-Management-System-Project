@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Allow: /assets/
+Disallow: /admin
+Disallow: /staff
+Disallow: /student
+Disallow: /admin-dashboard
+Disallow: /login
+Disallow: /verify-code
+Disallow: /access-denied
+
+Sitemap: https://__VITE_SITE_URL__/sitemap.xml

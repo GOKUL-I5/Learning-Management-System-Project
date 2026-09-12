@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { verifyUniqueCode } from '../firebase/services';
 import { KeyRound, ShieldCheck, Mail, LogOut, User } from 'lucide-react';
 import { motion } from 'framer-motion';
+import SEO from '../components/SEO';
 
 const VerifyCode = () => {
   const [loading, setLoading] = useState(false);
@@ -64,6 +65,12 @@ const VerifyCode = () => {
 
   return (
     <div className="saas-v3-auth-page">
+      <SEO 
+        title="Verify Code - CoreLearn LMS"
+        description="Verify your identity to securely access your CoreLearn LMS dashboard."
+        canonicalUrl="/verify-code"
+        robots="noindex, nofollow"
+      />
       <div className="saas-v3-auth-card">
 
         <div className="saas-v3-auth-logo-container">

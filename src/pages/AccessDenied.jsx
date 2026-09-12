@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import SEO from '../components/SEO';
 import './Login.css';
 
 const AccessDenied = () => {
@@ -8,6 +9,12 @@ const AccessDenied = () => {
 
   return (
     <div className="login-container">
+      <SEO 
+        title="Access Denied - CoreLearn LMS"
+        description="You do not have permission to access this system."
+        canonicalUrl="/access-denied"
+        robots="noindex, nofollow"
+      />
       <div className="login-card" style={{ textAlign: 'center' }}>
         
         <div className="login-logo-wrapper" style={{ margin: '0 auto 20px auto', backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>

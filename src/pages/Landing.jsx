@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, Shield, Users, Zap, Sun, Moon, CheckCircle, Gradu
 import { motion } from 'framer-motion';
 import FloatingParticles from '../components/FloatingParticles';
 import DotField from '../components/DotField';
+import SEO from '../components/SEO';
 import './Landing.css';
 
 const Landing = () => {
@@ -28,8 +29,37 @@ const Landing = () => {
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } }
   };
 
+  const landingSchema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": `${import.meta.env.VITE_SITE_URL || ''}/#website`,
+        "url": `${import.meta.env.VITE_SITE_URL || ''}/`,
+        "name": "CoreLearn LMS",
+        "description": "A secure, minimalist learning management platform designed for modern educational institutions."
+      },
+      {
+        "@type": "Organization",
+        "@id": `${import.meta.env.VITE_SITE_URL || ''}/#organization`,
+        "name": "CoreLearn LMS",
+        "url": `${import.meta.env.VITE_SITE_URL || ''}/`,
+        "logo": {
+          "@type": "ImageObject",
+          "url": `${import.meta.env.VITE_SITE_URL || ''}/vite.svg`
+        }
+      }
+    ]
+  };
+
   return (
     <div className="landing-page">
+      <SEO 
+        title="CoreLearn LMS - Passwordless Educational Platform"
+        description="A secure, minimalist learning management platform designed for modern educational institutions. Streamline administration with intelligent, role-based access."
+        canonicalUrl="/"
+        schema={landingSchema}
+      />
       {/* --- HERO SECTION --- */}
       <section className="hero-section">
         {/* Interactive Backgrounds */}

@@ -5,6 +5,7 @@ import { identifyUser, verifyUniqueCode, ensureSuperAdminInFirestore } from '../
 import { auth } from '../firebase/config';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { BookOpen, KeyRound, Phone, ArrowRight, ArrowLeft } from 'lucide-react';
+import SEO from '../components/SEO';
 import './Login.css';
 
 const googleProvider = new GoogleAuthProvider();
@@ -176,6 +177,12 @@ const Login = () => {
 
   return (
     <div className="saas-v3-auth-page">
+      <SEO 
+        title="Login - CoreLearn LMS"
+        description="Login securely to CoreLearn LMS using your phone number or Google account."
+        canonicalUrl="/login"
+        robots="noindex, nofollow"
+      />
       <div className="saas-v3-auth-card">
         
         <div className="saas-v3-auth-logo-container">
